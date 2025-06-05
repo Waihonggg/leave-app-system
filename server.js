@@ -6,6 +6,7 @@ const { google } = require('googleapis');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
+const nodemailer = require('nodemailer'); // Import nodemailer
 require('dotenv').config();
 
 const app = express();
@@ -205,6 +206,15 @@ function requireLogin(req, res, next) {
     }
 }
 
+// Configure Nodemailer (replace with your email provider details)
+const transporter = nodemailer.createTransport({
+    service: 'gmail', // e.g., 'gmail', 'Outlook'
+    auth: {
+        user: process.env.EMAIL_USER, // Your email address
+        pass: process.env.EMAIL_PASS  // Your email password or app password
+    }
+});
+
 // Routes
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'login.html'));
@@ -292,84 +302,176 @@ app.get('/api/leave-data', requireLogin, async (req, res) => {
 app.post('/api/apply-leave', requireLogin, async (req, res) => {
     const { leaveType, startDate, endDate, reason, days } = req.body;
     const rowIndex = req.session.user.rowIndex;
+    const username = req.session.user.username; // Get username from session
 
     try {
-        // Get current data
-        const currentDataResponse = await sheets.spreadsheets.values.get({
+        // 1. Add leave application to 'Leave Application' sheet
+        const leaveApplication = [
+            username,
+            leaveType,
+            startDate,
+            endDate,
+            reason,
+            'Pending' // Initial status
+        ];
+
+        const appendResponse = await sheets.spreadsheets.values.append({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!A${rowIndex}:AK${rowIndex}`,
-        });
-
-        const currentData = currentDataResponse.data.values[0];
-
-        // Calculate new values
-        const startMonth = new Date(startDate).toLocaleString('en-US', { month: 'short' });
-        const monthCol = getMonthColumn(startMonth);
-
-        if (!monthCol) {
-            return res.status(400).json({ success: false, message: 'Invalid month' });
-        }
-
-        let updates = [];
-
-        if (leaveType === 'MC') {
-            // Update MC columns
-            const currentMC = parseInt(currentData[getColumnIndex(monthCol.mc)] || 0);
-            const totalMCTaken = parseInt(currentData[34] || 0);  // AI
-            const mcBalance = parseInt(currentData[35] || 0);    // AJ
-
-            updates.push({
-                range: `${SHEET_NAME}!${monthCol.mc}${rowIndex}`,
-                values: [[currentMC + days]]
-            });
-
-            updates.push({
-                range: `${SHEET_NAME}!AI${rowIndex}`,
-                values: [[totalMCTaken + days]]
-            });
-
-            updates.push({
-                range: `${SHEET_NAME}!AJ${rowIndex}`,
-                values: [[mcBalance - (totalMCTaken + days)]]
-            });
-        } else {
-            // Update leave columns (AL or CCL)
-            const currentLeave = parseInt(currentData[getColumnIndex(monthCol.leave)] || 0);
-            const totalLeaveTaken = parseInt(currentData[32] || 0);  // AG
-            const totalLeave = parseInt(currentData[7] || 0);    // H
-            const leaveBalance = parseInt(currentData[33] || 0);   // AH
-
-            updates.push({
-                range: `${SHEET_NAME}!${monthCol.leave}${rowIndex}`,
-                values: [[currentLeave + days]]
-            });
-
-            updates.push({
-                range: `${SHEET_NAME}!AG${rowIndex}`,
-                values: [[totalLeaveTaken + days]]
-            });
-
-            updates.push({
-                range: `${SHEET_NAME}!AH${rowIndex}`,
-                values: [[leaveBalance - (totalLeaveTaken + days)]]
-            });
-        }
-
-        // Batch update
-        await sheets.spreadsheets.values.batchUpdate({
-            spreadsheetId: SPREADSHEET_ID,
-            resource: {
-                valueInputOption: 'USER_ENTERED',
-                data: updates
+            range: `${LEAVE_APPLICATION_SHEET}!A:F`, // Append to the end of the sheet
+            valueInputOption: 'USER_ENTERED',
+            requestBody: {
+                values: [leaveApplication]
             }
         });
 
-        // Optionally, you may want to record the leave application in the 'Leave Application' sheet here
+        const applicationRow = appendResponse.data.updates.updatedRange.split('!')[1].replace(/[^0-9]/g, ''); // extract the added row number
 
-        res.json({ success: true, message: 'Leave applied successfully' });
+        // 2. Send email to manager (replace with actual manager's email)
+        const managerEmail = 'manager@example.com'; // Replace with the actual manager's email
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: managerEmail,
+            subject: 'Leave Application for Approval',
+            html: `
+                <p>A leave application has been submitted by ${username}.</p>
+                <p><strong>Leave Type:</strong> ${leaveType}</p>
+                <p><strong>Start Date:</strong> ${startDate}</p>
+                <p><strong>End Date:</strong> ${endDate}</p>
+                <p><strong>Reason:</strong> ${reason}</p>
+                <p><a href="[YOUR_BASE_URL]/api/approve-leave?row=${applicationRow}">Approve</a> | <a href="[YOUR_BASE_URL]/api/reject-leave?row=${applicationRow}">Reject</a></p>
+            `
+        };
+
+        transporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+                console.error('Error sending email:', error);
+            } else {
+                console.log('Email sent:', info.response);
+            }
+        });
+
+        res.json({ success: true, message: 'Leave application submitted successfully.' });
+
     } catch (error) {
         console.error('Error applying leave:', error);
         res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Approve leave endpoint (called by manager via email link)
+app.get('/api/approve-leave', async (req, res) => {
+    const applicationRow = req.query.row;
+
+    try {
+        // 1. Update 'Leave Application' sheet
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${LEAVE_APPLICATION_SHEET}!G${applicationRow}`, // Update status column
+            valueInputOption: 'USER_ENTERED',
+            requestBody: {
+                values: [['Approved']]
+            }
+        });
+
+        // 2. Get leave application details
+        const leaveDetailsResponse = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${LEAVE_APPLICATION_SHEET}!A${applicationRow}:F${applicationRow}`,
+        });
+
+        const leaveDetails = leaveDetailsResponse.data.values[0];
+        const username = leaveDetails[1];
+        const leaveType = leaveDetails[2];
+        const startDate = leaveDetails[3];
+        const endDate = leaveDetails[4];
+        const reason = leaveDetails[5];
+
+        // 3. Update 'Leave Data' sheet (if needed, based on leave type and dates)
+        // TODO: Implement logic to update the 'Leave Data' sheet
+
+        // 4. Send email to applicant
+        const applicantEmail = 'applicant@example.com'; // Replace with the actual applicant's email
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: applicantEmail,
+            subject: 'Leave Application Approved',
+            html: `<p>Your leave application has been approved.</p>
+                   <p><strong>Leave Type:</strong> ${leaveType}</p>
+                   <p><strong>Start Date:</strong> ${startDate}</p>
+                   <p><strong>End Date:</strong> ${endDate}</p>
+                   <p><strong>Reason:</strong> ${reason}</p>`
+        };
+
+        transporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+                console.error('Error sending email:', error);
+            } else {
+                console.log('Email sent:', info.response);
+            }
+        });
+
+        res.send('Leave application approved successfully.'); // Or redirect to a confirmation page
+
+    } catch (error) {
+        console.error('Error approving leave:', error);
+        res.status(500).send('Error approving leave.');
+    }
+});
+
+// Reject leave endpoint (called by manager via email link)
+app.get('/api/reject-leave', async (req, res) => {
+    const applicationRow = req.query.row;
+
+    try {
+        // 1. Update 'Leave Application' sheet
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${LEAVE_APPLICATION_SHEET}!G${applicationRow}`, // Update status column
+            valueInputOption: 'USER_ENTERED',
+            requestBody: {
+                values: [['Rejected']]
+            }
+        });
+
+        // 2. Get leave application details
+        const leaveDetailsResponse = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${LEAVE_APPLICATION_SHEET}!A${applicationRow}:F${applicationRow}`,
+        });
+
+        const leaveDetails = leaveDetailsResponse.data.values[0];
+        const username = leaveDetails[1];
+        const leaveType = leaveDetails[2];
+        const startDate = leaveDetails[3];
+        const endDate = leaveDetails[4];
+        const reason = leaveDetails[5];
+
+        // 3. Send email to applicant
+        const applicantEmail = 'applicant@example.com'; // Replace with the actual applicant's email
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: applicantEmail,
+            subject: 'Leave Application Rejected',
+            html: `<p>Your leave application has been rejected.</p>
+                   <p><strong>Leave Type:</strong> ${leaveType}</p>
+                   <p><strong>Start Date:</strong> ${startDate}</p>
+                   <p><strong>End Date:</strong> ${endDate}</p>
+                   <p><strong>Reason:</strong> ${reason}</p>`
+        };
+
+        transporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+                console.error('Error sending email:', error);
+            } else {
+                console.log('Email sent:', info.response);
+            }
+        });
+
+        res.send('Leave application rejected successfully.'); // Or redirect to a confirmation page
+
+    } catch (error) {
+        console.error('Error rejecting leave:', error);
+        res.status(500).send('Error rejecting leave.');
     }
 });
 
