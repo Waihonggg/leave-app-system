@@ -3,6 +3,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const session = require('express-session');
 const { google } = require('googleapis');
+const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
@@ -89,7 +90,74 @@ try {
     process.exit(1);
 }
 
-const sheets = google.sheets({ version: 'v4', auth });
+// Initialize Google Sheets (create sheet if needed)
+async function initializeSheet() {
+    try {
+        const sheets = google.sheets({ version: 'v4', auth });
+        
+        // First, try to get spreadsheet metadata
+        const metadata = await sheets.spreadsheets.get({
+            spreadsheetId: process.env.SPREADSHEET_ID
+        });
+        
+        console.log('Connected to spreadsheet:', metadata.data.properties.title);
+        console.log('Available sheets:', metadata.data.sheets.map(s => s.properties.title));
+        
+        // Check if we have any sheets with data
+        const firstSheetName = metadata.data.sheets[0].properties.title;
+        
+        // Try to read the first row to check if headers exist
+        try {
+            const response = await sheets.spreadsheets.values.get({
+                spreadsheetId: process.env.SPREADSHEET_ID,
+                range: `${firstSheetName}!A1:B1`
+            });
+            
+            if (!response.data.values || response.data.values.length === 0) {
+                // No headers, let's add them
+                console.log('Adding headers to the sheet...');
+                await sheets.spreadsheets.values.update({
+                    spreadsheetId: process.env.SPREADSHEET_ID,
+                    range: `${firstSheetName}!A1:B1`,
+                    valueInputOption: 'RAW',
+                    requestBody: {
+                        values: [['Username', 'Password']]
+                    }
+                });
+                
+                // Add a default admin user
+                await sheets.spreadsheets.values.append({
+                    spreadsheetId: process.env.SPREADSHEET_ID,
+                    range: `${firstSheetName}!A:B`,
+                    valueInputOption: 'RAW',
+                    requestBody: {
+                        values: [['admin', await bcrypt.hash('admin123', 10)]]
+                    }
+                });
+                
+                console.log('Sheet initialized with headers and default admin user (username: admin, password: admin123)');
+            }
+        } catch (err) {
+            console.log('Sheet seems empty, initializing...');
+        }
+        
+        return firstSheetName;
+    } catch (error) {
+        console.error('Error initializing sheet:', error);
+        throw error;
+    }
+}
+
+// Store the sheet name globally
+let SHEET_NAME = 'Sheet1';
+
+// Initialize sheet on startup
+initializeSheet().then(sheetName => {
+    SHEET_NAME = sheetName;
+    console.log(`Using sheet: ${SHEET_NAME}`);
+}).catch(err => {
+    console.error('Failed to initialize sheet:', err);
+});
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '1YPp78gjT9T_aLXau6FUVc0AxEftHnOijBDjrb3qV4rc';
 
 // Helper function to get month column
