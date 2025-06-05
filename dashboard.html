@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leave Dashboard</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <h1>Leave Application System</h1>
+            <div class="nav-links">
+                <a href="dashboard.html" class="active">Dashboard</a>
+                <a href="apply-leave.html">Apply Leave</a>
+                <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="welcome-section">
+            <h2>Welcome, <span id="username"></span>!</h2>
+            <p>Current Date: <span id="currentDate"></span></p>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="card">
+                <h3>Leave Balance Overview</h3>
+                <div class="balance-grid">
+                    <div class="balance-item">
+                        <label>Total Leave Entitlement:</label>
+                        <span id="totalLeave" class="value">0</span>
+                    </div>
+                    <div class="balance-item">
+                        <label>Leave Taken:</label>
+                        <span id="leaveTaken" class="value">0</span>
+                    </div>
+                    <div class="balance-item">
+                        <label>Leave Balance:</label>
+                        <span id="leaveBalance" class="value balance">0</span>
+                    </div>
+                    <div class="balance-item">
+                        <label>MC Taken:</label>
+                        <span id="mcTaken" class="value">0</span>
+                    </div>
+                    <div class="balance-item">
+                        <label>MC Balance:</label>
+                        <span id="mcBalance" class="value balance">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Leave Breakdown</h3>
+                <div class="breakdown-grid">
+                    <div class="breakdown-item">
+                        <label>Carry Forward (2024):</label>
+                        <span id="carryForward" class="value">0</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <label>Annual Leave (2025):</label>
+                        <span id="annualLeave" class="value">0</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <label>Compassionate Leave:</label>
+                        <span id="compassionateLeave" class="value">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Monthly Leave Usage</h3>
+            <div class="table-responsive">
+                <table class="monthly-table">
+                    <thead>
+                        <tr>
+                            <th>Month</th>
+                            <th>Leave Days</th>
+                            <th>MC Days</th>
+                        </tr>
+                    </thead>
+                    <tbody id="monthlyTableBody">
+                        <!-- Dynamic content -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="action-buttons">
+            <a href="apply-leave.html" class="btn btn-primary">Apply for Leave</a>
+        </div>
+    </div>
+
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
