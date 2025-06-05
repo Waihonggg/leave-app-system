@@ -22,23 +22,32 @@ app.use(session({
 }));
 
 // Google Sheets setup
-let authConfig;
-if (process.env.GOOGLE_CREDENTIALS_JSON) {
-    // For production (Render)
-    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
-    authConfig = {
-        credentials: credentials,
-        scopes: ['https://www.googleapis.com/auth/spreadsheets']
-    };
-} else {
-    // For local development
-    authConfig = {
-        keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS || 'credentials.json',
-        scopes: ['https://www.googleapis.com/auth/spreadsheets']
-    };
+let auth;
+try {
+    if (process.env.GOOGLE_CREDENTIALS_JSON) {
+        // For production (Render) - use credentials from environment variable
+        const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+        auth = new google.auth.GoogleAuth({
+            credentials: credentials,
+            scopes: ['https://www.googleapis.com/auth/spreadsheets']
+        });
+    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+        // Use file path from GOOGLE_APPLICATION_CREDENTIALS
+        auth = new google.auth.GoogleAuth({
+            keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+            scopes: ['https://www.googleapis.com/auth/spreadsheets']
+        });
+    } else {
+        // Default to local credentials.json file
+        auth = new google.auth.GoogleAuth({
+            keyFile: 'credentials.json',
+            scopes: ['https://www.googleapis.com/auth/spreadsheets']
+        });
+    }
+} catch (error) {
+    console.error('Error setting up Google Auth:', error);
+    process.exit(1);
 }
-
-const auth = new google.auth.GoogleAuth(authConfig);
 
 const sheets = google.sheets({ version: 'v4', auth });
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '1YPp78gjT9T_aLXau6FUVc0AxEftHnOijBDjrb3qV4rc';
