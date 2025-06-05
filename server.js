@@ -90,13 +90,22 @@ try {
     process.exit(1);
 }
 
+// Sheet names based on user input
+const SHEET_NAME = 'Leave Data';
+const LEAVE_APPLICATION_SHEET = 'Leave Application';
+const MASTER_CALENDAR_SHEET = 'Master Calendar';
+
+// Create sheets instance globally
+const sheets = google.sheets({ version: 'v4', auth });
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '1YPp78gjT9T_aLXau6FUVc0AxEftHnOijBDjrb3qV4rc';
+
 // Initialize Google Sheets (create sheet if needed)
 async function initializeSheet() {
     try {
-        const sheets = google.sheets({ version: 'v4', auth });
+        const sheetsInstance = google.sheets({ version: 'v4', auth });
         
         // First, try to get spreadsheet metadata
-        const metadata = await sheets.spreadsheets.get({
+        const metadata = await sheetsInstance.spreadsheets.get({
             spreadsheetId: process.env.SPREADSHEET_ID
         });
         
@@ -104,11 +113,11 @@ async function initializeSheet() {
         console.log('Available sheets:', metadata.data.sheets.map(s => s.properties.title));
         
         // Check if we have any sheets with data
-        const firstSheetName = metadata.data.sheets[0].properties.title;
+        const firstSheetName = SHEET_NAME;
         
         // Try to read the first row to check if headers exist
         try {
-            const response = await sheets.spreadsheets.values.get({
+            const response = await sheetsInstance.spreadsheets.values.get({
                 spreadsheetId: process.env.SPREADSHEET_ID,
                 range: `${firstSheetName}!A1:B1`
             });
@@ -116,7 +125,7 @@ async function initializeSheet() {
             if (!response.data.values || response.data.values.length === 0) {
                 // No headers, let's add them
                 console.log('Adding headers to the sheet...');
-                await sheets.spreadsheets.values.update({
+                await sheetsInstance.spreadsheets.values.update({
                     spreadsheetId: process.env.SPREADSHEET_ID,
                     range: `${firstSheetName}!A1:B1`,
                     valueInputOption: 'RAW',
@@ -126,7 +135,7 @@ async function initializeSheet() {
                 });
                 
                 // Add a default admin user
-                await sheets.spreadsheets.values.append({
+                await sheetsInstance.spreadsheets.values.append({
                     spreadsheetId: process.env.SPREADSHEET_ID,
                     range: `${firstSheetName}!A:B`,
                     valueInputOption: 'RAW',
@@ -148,20 +157,12 @@ async function initializeSheet() {
     }
 }
 
-// Store the sheet name globally
-let SHEET_NAME = 'Sheet1';
-
-// Create sheets instance globally
-const sheets = google.sheets({ version: 'v4', auth });
-
 // Initialize sheet on startup
 initializeSheet().then(sheetName => {
-    SHEET_NAME = sheetName;
-    console.log(`Using sheet: ${SHEET_NAME}`);
+    console.log(`Using sheet: ${sheetName}`);
 }).catch(err => {
     console.error('Failed to initialize sheet:', err);
 });
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '1YPp78gjT9T_aLXau6FUVc0AxEftHnOijBDjrb3qV4rc';
 
 // Helper function to get month column
 function getMonthColumn(month) {
@@ -194,7 +195,7 @@ app.post('/api/login', async (req, res) => {
     try {
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: 'Sheet1!A:B',
+            range: `${SHEET_NAME}!A:B`,
         });
         
         const rows = response.data.values;
@@ -223,7 +224,7 @@ app.get('/api/leave-data', async (req, res) => {
     try {
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `Sheet1!A${req.session.user.rowIndex}:BD${req.session.user.rowIndex}`,
+            range: `${SHEET_NAME}!A${req.session.user.rowIndex}:BD${req.session.user.rowIndex}`,
         });
         
         const userData = response.data.values[0];
@@ -274,7 +275,7 @@ app.post('/api/apply-leave', async (req, res) => {
         // Get current data
         const currentDataResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `Sheet1!A${rowIndex}:BD${rowIndex}`,
+            range: `${SHEET_NAME}!A${rowIndex}:BD${rowIndex}`,
         });
         
         const currentData = currentDataResponse.data.values[0];
@@ -296,17 +297,17 @@ app.post('/api/apply-leave', async (req, res) => {
             const mcBalance = 14; // Assuming 14 days MC per year
             
             updates.push({
-                range: `Sheet1!${monthCol.mc}${rowIndex}`,
+                range: `${SHEET_NAME}!${monthCol.mc}${rowIndex}`,
                 values: [[currentMC + days]]
             });
             
             updates.push({
-                range: `Sheet1!AG${rowIndex}`,
+                range: `${SHEET_NAME}!AG${rowIndex}`,
                 values: [[totalMCTaken + days]]
             });
             
             updates.push({
-                range: `Sheet1!AH${rowIndex}`,
+                range: `${SHEET_NAME}!AH${rowIndex}`,
                 values: [[mcBalance - (totalMCTaken + days)]]
             });
         } else {
@@ -316,17 +317,17 @@ app.post('/api/apply-leave', async (req, res) => {
             const totalLeave = parseInt(currentData[5] || 0);
             
             updates.push({
-                range: `Sheet1!${monthCol.leave}${rowIndex}`,
+                range: `${SHEET_NAME}!${monthCol.leave}${rowIndex}`,
                 values: [[currentLeave + days]]
             });
             
             updates.push({
-                range: `Sheet1!AE${rowIndex}`,
+                range: `${SHEET_NAME}!AE${rowIndex}`,
                 values: [[totalLeaveTaken + days]]
             });
             
             updates.push({
-                range: `Sheet1!AF${rowIndex}`,
+                range: `${SHEET_NAME}!AF${rowIndex}`,
                 values: [[totalLeave - (totalLeaveTaken + days)]]
             });
         }
@@ -339,7 +340,9 @@ app.post('/api/apply-leave', async (req, res) => {
                 data: updates
             }
         });
-        
+
+        // Optionally, you may want to record the leave application in the 'Leave Application' sheet here
+
         res.json({ success: true, message: 'Leave applied successfully' });
     } catch (error) {
         console.error('Error applying leave:', error);
