@@ -188,7 +188,6 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'login.html'));
 });
 
-// Login endpoint
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
 
@@ -205,7 +204,15 @@ app.post('/api/login', async (req, res) => {
 
         if (userIndex > 0) {
             req.session.user = { username, rowIndex: userIndex + 1 };
-            res.json({ success: true, message: 'Login successful' });
+            req.session.save(err => {  // Add this
+                if (err) {
+                    console.error("Error saving session:", err);
+                    return res.status(500).json({ success: false, message: 'Session error' }); // Send error response
+                } else {
+                    console.log("Session saved successfully");
+                    res.json({ success: true, message: 'Login successful' });
+                }
+            });
         } else {
             res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
@@ -215,8 +222,17 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// Get user leave data
-app.get('/api/leave-data', async (req, res) => {
+// Add middleware to check for session on other routes (example):
+function requireLogin(req, res, next) {
+    if (req.session && req.session.user) {
+        next(); // User is logged in, proceed to the next middleware/route handler
+    } else {
+        console.log("Unauthorized access attempt");
+        res.status(401).json({ success: false, message: 'Not authenticated' }); // Or redirect to login page
+    }
+}
+
+app.get('/api/leave-data', requireLogin, async (req, res) => { // Apply middleware here
     if (!req.session.user) {
         return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
