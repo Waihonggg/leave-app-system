@@ -22,7 +22,7 @@ const sessionConfig = {
     secret: process.env.SESSION_SECRET || 'your-secret-key',
     resave: false,
     saveUninitialized: false,
-    cookie: { 
+    cookie: {
         maxAge: 3600000, // 1 hour
         secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
@@ -56,7 +56,7 @@ try {
             console.error('Error parsing GOOGLE_CREDENTIALS_JSON:', parseError);
             throw new Error('Invalid GOOGLE_CREDENTIALS_JSON format');
         }
-        
+
         auth = new google.auth.GoogleAuth({
             credentials: credentials,
             scopes: ['https://www.googleapis.com/auth/spreadsheets']
@@ -78,7 +78,7 @@ try {
     } else {
         throw new Error('No Google credentials found. Please set GOOGLE_CREDENTIALS_JSON environment variable or provide credentials.json file.');
     }
-    
+
     // Test the authentication
     auth.getClient().then(() => {
         console.log('Google Sheets authentication successful');
@@ -103,25 +103,25 @@ const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '1YPp78gjT9T_aLXau6FUVc0AxE
 async function initializeSheet() {
     try {
         const sheetsInstance = google.sheets({ version: 'v4', auth });
-        
+
         // First, try to get spreadsheet metadata
         const metadata = await sheetsInstance.spreadsheets.get({
             spreadsheetId: process.env.SPREADSHEET_ID
         });
-        
+
         console.log('Connected to spreadsheet:', metadata.data.properties.title);
         console.log('Available sheets:', metadata.data.sheets.map(s => s.properties.title));
-        
+
         // Check if we have any sheets with data
         const firstSheetName = SHEET_NAME;
-        
+
         // Try to read the first row to check if headers exist
         try {
             const response = await sheetsInstance.spreadsheets.values.get({
                 spreadsheetId: process.env.SPREADSHEET_ID,
                 range: `${firstSheetName}!A1:B1`
             });
-            
+
             if (!response.data.values || response.data.values.length === 0) {
                 // No headers, let's add them
                 console.log('Adding headers to the sheet...');
@@ -133,7 +133,7 @@ async function initializeSheet() {
                         values: [['Username', 'Password']]
                     }
                 });
-                
+
                 // Add a default admin user
                 await sheetsInstance.spreadsheets.values.append({
                     spreadsheetId: process.env.SPREADSHEET_ID,
@@ -143,13 +143,13 @@ async function initializeSheet() {
                         values: [['admin', await bcrypt.hash('admin123', 10)]]
                     }
                 });
-                
+
                 console.log('Sheet initialized with headers and default admin user (username: admin, password: admin123)');
             }
         } catch (err) {
             console.log('Sheet seems empty, initializing...');
         }
-        
+
         return firstSheetName;
     } catch (error) {
         console.error('Error initializing sheet:', error);
@@ -167,18 +167,18 @@ initializeSheet().then(sheetName => {
 // Helper function to get month column
 function getMonthColumn(month) {
     const monthColumns = {
-        'Jan': { leave: 'G', mc: 'H' },
-        'Feb': { leave: 'I', mc: 'J' },
-        'March': { leave: 'K', mc: 'L' },
-        'Apr': { leave: 'M', mc: 'N' },
-        'May': { leave: 'O', mc: 'P' },
-        'June': { leave: 'Q', mc: 'R' },
-        'July': { leave: 'S', mc: 'T' },
-        'Aug': { leave: 'U', mc: 'V' },
-        'Sept': { leave: 'W', mc: 'X' },
-        'Oct': { leave: 'Y', mc: 'Z' },
-        'Nov': { leave: 'AA', mc: 'AB' },
-        'Dec': { leave: 'AC', mc: 'AD' }
+        'Jan': { leave: 'I', mc: 'J' },
+        'Feb': { leave: 'K', mc: 'L' },
+        'March': { leave: 'M', mc: 'N' },
+        'Apr': { leave: 'O', mc: 'P' },
+        'May': { leave: 'Q', mc: 'R' },
+        'June': { leave: 'S', mc: 'T' },
+        'July': { leave: 'U', mc: 'V' },
+        'Aug': { leave: 'W', mc: 'X' },
+        'Sept': { leave: 'Y', mc: 'Z' },
+        'Oct': { leave: 'AA', mc: 'AB' },
+        'Nov': { leave: 'AC', mc: 'AD' },
+        'Dec': { leave: 'AE', mc: 'AF' }
     };
     return monthColumns[month];
 }
@@ -191,18 +191,18 @@ app.get('/', (req, res) => {
 // Login endpoint
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
-    
+
     try {
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
             range: `${SHEET_NAME}!A:B`,
         });
-        
+
         const rows = response.data.values;
-        const userIndex = rows.findIndex(row => 
+        const userIndex = rows.findIndex(row =>
             row[0] === username && row[1] === password
         );
-        
+
         if (userIndex > 0) {
             req.session.user = { username, rowIndex: userIndex + 1 };
             res.json({ success: true, message: 'Login successful' });
@@ -220,41 +220,41 @@ app.get('/api/leave-data', async (req, res) => {
     if (!req.session.user) {
         return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
-    
+
     try {
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!A${req.session.user.rowIndex}:BD${req.session.user.rowIndex}`,
+            range: `${SHEET_NAME}!A${req.session.user.rowIndex}:AK${req.session.user.rowIndex}`,
         });
-        
+
         const userData = response.data.values[0];
-        
+
         const leaveData = {
             username: userData[0],
-            carryForward: parseInt(userData[2]) || 0,
-            annualLeave: parseInt(userData[3]) || 0,
-            compassionateLeave: parseInt(userData[4]) || 0,
-            totalLeave: parseInt(userData[5]) || 0,
+            carryForward: parseInt(userData[4]) || 0,  // E
+            annualLeave: parseInt(userData[5]) || 0,   // F
+            compassionateLeave: parseInt(userData[6]) || 0,  // G
+            totalLeave: parseInt(userData[7]) || 0,   // H
             monthlyData: {
-                Jan: { leave: parseInt(userData[6]) || 0, mc: parseInt(userData[7]) || 0 },
-                Feb: { leave: parseInt(userData[8]) || 0, mc: parseInt(userData[9]) || 0 },
-                March: { leave: parseInt(userData[10]) || 0, mc: parseInt(userData[11]) || 0 },
-                Apr: { leave: parseInt(userData[12]) || 0, mc: parseInt(userData[13]) || 0 },
-                May: { leave: parseInt(userData[14]) || 0, mc: parseInt(userData[15]) || 0 },
-                June: { leave: parseInt(userData[16]) || 0, mc: parseInt(userData[17]) || 0 },
-                July: { leave: parseInt(userData[18]) || 0, mc: parseInt(userData[19]) || 0 },
-                Aug: { leave: parseInt(userData[20]) || 0, mc: parseInt(userData[21]) || 0 },
-                Sept: { leave: parseInt(userData[22]) || 0, mc: parseInt(userData[23]) || 0 },
-                Oct: { leave: parseInt(userData[24]) || 0, mc: parseInt(userData[25]) || 0 },
-                Nov: { leave: parseInt(userData[26]) || 0, mc: parseInt(userData[27]) || 0 },
-                Dec: { leave: parseInt(userData[28]) || 0, mc: parseInt(userData[29]) || 0 }
+                Jan: { leave: parseInt(userData[8]) || 0, mc: parseInt(userData[9]) || 0 },   // I, J
+                Feb: { leave: parseInt(userData[10]) || 0, mc: parseInt(userData[11]) || 0 },  // K, L
+                March: { leave: parseInt(userData[12]) || 0, mc: parseInt(userData[13]) || 0 }, // M, N
+                Apr: { leave: parseInt(userData[14]) || 0, mc: parseInt(userData[15]) || 0 }, // O, P
+                May: { leave: parseInt(userData[16]) || 0, mc: parseInt(userData[17]) || 0 }, // Q, R
+                June: { leave: parseInt(userData[18]) || 0, mc: parseInt(userData[19]) || 0 }, // S, T
+                July: { leave: parseInt(userData[20]) || 0, mc: parseInt(userData[21]) || 0 }, // U, V
+                Aug: { leave: parseInt(userData[22]) || 0, mc: parseInt(userData[23]) || 0 }, // W, X
+                Sept: { leave: parseInt(userData[24]) || 0, mc: parseInt(userData[25]) || 0 }, // Y, Z
+                Oct: { leave: parseInt(userData[26]) || 0, mc: parseInt(userData[27]) || 0 }, // AA, AB
+                Nov: { leave: parseInt(userData[28]) || 0, mc: parseInt(userData[29]) || 0 }, // AC, AD
+                Dec: { leave: parseInt(userData[30]) || 0, mc: parseInt(userData[31]) || 0 }  // AE, AF
             },
-            leaveTaken: parseInt(userData[30]) || 0,
-            leaveBalance: parseInt(userData[31]) || 0,
-            mcTaken: parseInt(userData[32]) || 0,
-            mcBalance: parseInt(userData[33]) || 0
+            leaveTaken: parseInt(userData[32]) || 0,  // AG
+            leaveBalance: parseInt(userData[33]) || 0, // AH
+            mcTaken: parseInt(userData[34]) || 0,     // AI
+            mcBalance: parseInt(userData[35]) || 0    // AJ
         };
-        
+
         res.json({ success: true, data: leaveData });
     } catch (error) {
         console.error('Error fetching leave data:', error);
@@ -267,71 +267,72 @@ app.post('/api/apply-leave', async (req, res) => {
     if (!req.session.user) {
         return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
-    
+
     const { leaveType, startDate, endDate, reason, days } = req.body;
     const rowIndex = req.session.user.rowIndex;
-    
+
     try {
         // Get current data
         const currentDataResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!A${rowIndex}:BD${rowIndex}`,
+            range: `${SHEET_NAME}!A${rowIndex}:AK${rowIndex}`,
         });
-        
+
         const currentData = currentDataResponse.data.values[0];
-        
+
         // Calculate new values
         const startMonth = new Date(startDate).toLocaleString('en-US', { month: 'short' });
         const monthCol = getMonthColumn(startMonth);
-        
+
         if (!monthCol) {
             return res.status(400).json({ success: false, message: 'Invalid month' });
         }
-        
+
         let updates = [];
-        
+
         if (leaveType === 'MC') {
             // Update MC columns
             const currentMC = parseInt(currentData[getColumnIndex(monthCol.mc)] || 0);
-            const totalMCTaken = parseInt(currentData[32] || 0);
-            const mcBalance = 14; // Assuming 14 days MC per year
-            
+            const totalMCTaken = parseInt(currentData[34] || 0);  // AI
+            const mcBalance = parseInt(currentData[35] || 0);    // AJ
+
             updates.push({
                 range: `${SHEET_NAME}!${monthCol.mc}${rowIndex}`,
                 values: [[currentMC + days]]
             });
-            
+
             updates.push({
-                range: `${SHEET_NAME}!AG${rowIndex}`,
+                range: `${SHEET_NAME}!AI${rowIndex}`,
                 values: [[totalMCTaken + days]]
             });
-            
+
             updates.push({
-                range: `${SHEET_NAME}!AH${rowIndex}`,
+                range: `${SHEET_NAME}!AJ${rowIndex}`,
                 values: [[mcBalance - (totalMCTaken + days)]]
             });
         } else {
             // Update leave columns (AL or CCL)
             const currentLeave = parseInt(currentData[getColumnIndex(monthCol.leave)] || 0);
-            const totalLeaveTaken = parseInt(currentData[30] || 0);
-            const totalLeave = parseInt(currentData[5] || 0);
-            
+            const totalLeaveTaken = parseInt(currentData[32] || 0);  // AG
+            const totalLeave = parseInt(currentData[7] || 0);    // H
+            const leaveBalance = parseInt(currentData[33] || 0);   // AH
+
             updates.push({
                 range: `${SHEET_NAME}!${monthCol.leave}${rowIndex}`,
                 values: [[currentLeave + days]]
             });
-            
+
             updates.push({
-                range: `${SHEET_NAME}!AE${rowIndex}`,
+                range: `${SHEET_NAME}!AG${rowIndex}`,
                 values: [[totalLeaveTaken + days]]
             });
-            
+
             updates.push({
-                range: `${SHEET_NAME}!AF${rowIndex}`,
-                values: [[totalLeave - (totalLeaveTaken + days)]]
+                range: `${SHEET_NAME}!AH${rowIndex}`,
+                values: [[leaveBalance - (totalLeaveTaken + days)]]
             });
         }
-        
+
         // Batch update
         await sheets.spreadsheets.values.batchUpdate({
             spreadsheetId: SPREADSHEET_ID,
@@ -354,11 +355,11 @@ app.post('/api/apply-leave', async (req, res) => {
 function getColumnIndex(column) {
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     let index = 0;
-    
+
     for (let i = 0; i < column.length; i++) {
         index = index * 26 + alphabet.indexOf(column[i]) + 1;
     }
-    
+
     return index - 1;
 }
 
