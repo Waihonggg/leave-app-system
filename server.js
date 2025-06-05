@@ -17,23 +17,32 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname)));
 
-// Session configuration for production
-const sessionConfig = {
+// Trust proxy
+app.set('trust proxy', 1) // trust first proxy
+
+// Session configuration - IMPORTANT: Use a database-backed store in production!
+let sessionConfig = {
     secret: process.env.SESSION_SECRET || 'your-secret-key',
     resave: false,
     saveUninitialized: false,
     cookie: {
         maxAge: 3600000, // 1 hour
-        secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
-        sameSite: 'strict'
     }
 };
 
-// In production, you should use a database session store
-// For now, we'll use memory store with a warning suppression
 if (process.env.NODE_ENV === 'production') {
-    console.log('Note: Using MemoryStore for sessions. Consider using a database session store for production.');
+    sessionConfig.cookie.secure = true; // Serve secure cookies
+    sessionConfig.cookie.sameSite = 'lax'; // or 'none' if needed
+
+    // TODO: Implement a database-backed session store (e.g., Redis, MongoDB) here
+    // For example:
+    // const RedisStore = require('connect-redis')(session);
+    // const redisClient = require('redis').createClient({ /* Redis config */ });
+    // sessionConfig.store = new RedisStore({ client: redisClient });
+} else {
+    sessionConfig.cookie.secure = false; // Allow non-HTTPS cookies in development
+    sessionConfig.cookie.sameSite = 'lax';
 }
 
 app.use(session(sessionConfig));
@@ -183,11 +192,25 @@ function getMonthColumn(month) {
     return monthColumns[month];
 }
 
+// Middleware to check if user is logged in
+function requireLogin(req, res, next) {
+    if (req.session && req.session.user) {
+        // Session exists, proceed
+        console.log("User is authenticated");
+        next();
+    } else {
+        // No session, redirect to login
+        console.log("Unauthorized access attempt");
+        return res.status(401).json({ success: false, message: 'Not authenticated' });  // Or redirect
+    }
+}
+
 // Routes
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'login.html'));
 });
 
+// Login endpoint
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
 
@@ -222,21 +245,8 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// Add middleware to check for session on other routes (example):
-function requireLogin(req, res, next) {
-    if (req.session && req.session.user) {
-        next(); // User is logged in, proceed to the next middleware/route handler
-    } else {
-        console.log("Unauthorized access attempt");
-        res.status(401).json({ success: false, message: 'Not authenticated' }); // Or redirect to login page
-    }
-}
-
-app.get('/api/leave-data', requireLogin, async (req, res) => { // Apply middleware here
-    if (!req.session.user) {
-        return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
-
+// Get user leave data
+app.get('/api/leave-data', requireLogin, async (req, res) => {
     try {
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
@@ -279,11 +289,7 @@ app.get('/api/leave-data', requireLogin, async (req, res) => { // Apply middlewa
 });
 
 // Apply leave endpoint
-app.post('/api/apply-leave', async (req, res) => {
-    if (!req.session.user) {
-        return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
-
+app.post('/api/apply-leave', requireLogin, async (req, res) => {
     const { leaveType, startDate, endDate, reason, days } = req.body;
     const rowIndex = req.session.user.rowIndex;
 
@@ -381,8 +387,13 @@ function getColumnIndex(column) {
 
 // Logout endpoint
 app.post('/api/logout', (req, res) => {
-    req.session.destroy();
-    res.json({ success: true });
+    req.session.destroy(err => {
+        if (err) {
+            console.error("Error destroying session:", err);
+            return res.status(500).json({ success: false, message: 'Logout error' });
+        }
+        res.json({ success: true });
+    });
 });
 
 app.listen(PORT, () => {
