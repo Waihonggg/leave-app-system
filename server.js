@@ -317,7 +317,7 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
 
         const appendResponse = await sheets.spreadsheets.values.append({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${LEAVE_APPLICATION_SHEET}!A:F`, // Append to the end of the sheet
+            range: `${LEAVE_APPLICATION_SHEET}!B:G`, // Append to the end of the sheet, start from column B
             valueInputOption: 'USER_ENTERED',
             requestBody: {
                 values: [leaveApplication]
@@ -326,7 +326,24 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
 
         const applicationRow = appendResponse.data.updates.updatedRange.split('!')[1].replace(/[^0-9]/g, ''); // extract the added row number
 
+        //Get the ID for leave application
+         const getIDResponse = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${LEAVE_APPLICATION_SHEET}!A:A`,
+        });
+
+        const applicationID = (getIDResponse.data.values.length);
+
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${LEAVE_APPLICATION_SHEET}!A${applicationRow}`, // Update ID column
+            valueInputOption: 'USER_ENTERED',
+            requestBody: {
+                values: [[applicationID]]
+            }
+        });
         // 2. Send email to manager (replace with actual manager's email)
+        // TODO: Fetch manager's email from Leave Data sheet based on username
         const managerEmail = 'manager@example.com'; // Replace with the actual manager's email
         const mailOptions = {
             from: process.env.EMAIL_USER,
@@ -376,20 +393,21 @@ app.get('/api/approve-leave', async (req, res) => {
         // 2. Get leave application details
         const leaveDetailsResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${LEAVE_APPLICATION_SHEET}!A${applicationRow}:F${applicationRow}`,
+            range: `${LEAVE_APPLICATION_SHEET}!B${applicationRow}:F${applicationRow}`,
         });
 
         const leaveDetails = leaveDetailsResponse.data.values[0];
-        const username = leaveDetails[1];
-        const leaveType = leaveDetails[2];
-        const startDate = leaveDetails[3];
-        const endDate = leaveDetails[4];
-        const reason = leaveDetails[5];
+        const username = leaveDetails[0];
+        const leaveType = leaveDetails[1];
+        const startDate = leaveDetails[2];
+        const endDate = leaveDetails[3];
+        const reason = leaveDetails[4];
 
         // 3. Update 'Leave Data' sheet (if needed, based on leave type and dates)
         // TODO: Implement logic to update the 'Leave Data' sheet
 
         // 4. Send email to applicant
+        // TODO: Fetch applicant's email from Leave Data sheet based on username
         const applicantEmail = 'applicant@example.com'; // Replace with the actual applicant's email
         const mailOptions = {
             from: process.env.EMAIL_USER,
@@ -436,17 +454,18 @@ app.get('/api/reject-leave', async (req, res) => {
         // 2. Get leave application details
         const leaveDetailsResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${LEAVE_APPLICATION_SHEET}!A${applicationRow}:F${applicationRow}`,
+            range: `${LEAVE_APPLICATION_SHEET}!B${applicationRow}:F${applicationRow}`,
         });
 
-        const leaveDetails = leaveDetailsResponse.data.values[0];
-        const username = leaveDetails[1];
-        const leaveType = leaveDetails[2];
-        const startDate = leaveDetails[3];
-        const endDate = leaveDetails[4];
-        const reason = leaveDetails[5];
+       const leaveDetails = leaveDetailsResponse.data.values[0];
+        const username = leaveDetails[0];
+        const leaveType = leaveDetails[1];
+        const startDate = leaveDetails[2];
+        const endDate = leaveDetails[3];
+        const reason = leaveDetails[4];
 
         // 3. Send email to applicant
+        // TODO: Fetch applicant's email from Leave Data sheet based on username
         const applicantEmail = 'applicant@example.com'; // Replace with the actual applicant's email
         const mailOptions = {
             from: process.env.EMAIL_USER,
