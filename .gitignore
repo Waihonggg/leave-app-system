@@ -1,9 +1,0 @@
-# Node.js dependencies
-node_modules/
-# dotenv environment variables
-.env
-# Google Cloud credentials
-backend/credentials.json
-
-# macOS system files
-.DS_Store
