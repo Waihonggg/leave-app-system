@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apply for Leave</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <h1>Leave Application System</h1>
+            <div class="nav-links">
+                <a href="dashboard.html">Dashboard</a>
+                <a href="apply-leave.html" class="active">Apply Leave</a>
+                <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="card">
+            <h2>Apply for Leave</h2>
+            <form id="leaveForm">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="leaveType">Leave Type</label>
+                        <select id="leaveType" name="leaveType" required>
+                            <option value="">Select Leave Type</option>
+                            <option value="AL">Annual Leave</option>
+                            <option value="CCL">Compassionate/Care Leave</option>
+                            <option value="MC">Medical Certificate</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="startDate">Start Date</label>
+                        <input type="date" id="startDate" name="startDate" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="endDate">End Date</label>
+                        <input type="date" id="endDate" name="endDate" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="days">Number of Days</label>
+                        <input type="number" id="days" name="days" min="0.5" step="0.5" readonly>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="reason">Reason for Leave</label>
+                    <textarea id="reason" name="reason" rows="4" required></textarea>
+                </div>
+
+                <div class="balance-info">
+                    <p>Current Leave Balance: <span id="currentBalance" class="balance">0</span> days</p>
+                    <p id="mcBalanceInfo" style="display:none;">Current MC Balance: <span id="currentMCBalance" class="balance">0</span> days</p>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Submit Application</button>
+                    <a href="dashboard.html" class="btn btn-secondary">Cancel</a>
+                </div>
+            </form>
+
+            <div id="message" class="message"></div>
+        </div>
+    </div>
+
+    <script src="js/apply-leave.js"></script>
+</body>
+</html>
