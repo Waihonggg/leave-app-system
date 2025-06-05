@@ -4,6 +4,7 @@ const bodyParser = require('body-parser');
 const session = require('express-session');
 const { google } = require('googleapis');
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -14,36 +15,75 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname)));
-app.use(session({
+
+// Session configuration for production
+const sessionConfig = {
     secret: process.env.SESSION_SECRET || 'your-secret-key',
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 3600000 } // 1 hour
-}));
+    cookie: { 
+        maxAge: 3600000, // 1 hour
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        sameSite: 'strict'
+    }
+};
+
+// In production, you should use a database session store
+// For now, we'll use memory store with a warning suppression
+if (process.env.NODE_ENV === 'production') {
+    console.log('Note: Using MemoryStore for sessions. Consider using a database session store for production.');
+}
+
+app.use(session(sessionConfig));
 
 // Google Sheets setup
 let auth;
 try {
     if (process.env.GOOGLE_CREDENTIALS_JSON) {
         // For production (Render) - use credentials from environment variable
-        const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+        console.log('Using Google credentials from environment variable');
+        let credentials;
+        try {
+            credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+            // Fix any potential URL issues
+            if (credentials.auth_uri) credentials.auth_uri = credentials.auth_uri.replace('https:/', 'https://');
+            if (credentials.token_uri) credentials.token_uri = credentials.token_uri.replace('https:/', 'https://');
+            if (credentials.auth_provider_x509_cert_url) credentials.auth_provider_x509_cert_url = credentials.auth_provider_x509_cert_url.replace('https:/', 'https://');
+            if (credentials.client_x509_cert_url) credentials.client_x509_cert_url = credentials.client_x509_cert_url.replace('https:/', 'https://');
+        } catch (parseError) {
+            console.error('Error parsing GOOGLE_CREDENTIALS_JSON:', parseError);
+            throw new Error('Invalid GOOGLE_CREDENTIALS_JSON format');
+        }
+        
         auth = new google.auth.GoogleAuth({
             credentials: credentials,
             scopes: ['https://www.googleapis.com/auth/spreadsheets']
         });
     } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
         // Use file path from GOOGLE_APPLICATION_CREDENTIALS
+        console.log('Using Google credentials from file:', process.env.GOOGLE_APPLICATION_CREDENTIALS);
         auth = new google.auth.GoogleAuth({
             keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
             scopes: ['https://www.googleapis.com/auth/spreadsheets']
         });
-    } else {
+    } else if (fs.existsSync('credentials.json')) {
         // Default to local credentials.json file
+        console.log('Using Google credentials from local credentials.json file');
         auth = new google.auth.GoogleAuth({
             keyFile: 'credentials.json',
             scopes: ['https://www.googleapis.com/auth/spreadsheets']
         });
+    } else {
+        throw new Error('No Google credentials found. Please set GOOGLE_CREDENTIALS_JSON environment variable or provide credentials.json file.');
     }
+    
+    // Test the authentication
+    auth.getClient().then(() => {
+        console.log('Google Sheets authentication successful');
+    }).catch(err => {
+        console.error('Google Sheets authentication failed:', err);
+    });
 } catch (error) {
     console.error('Error setting up Google Auth:', error);
     process.exit(1);
