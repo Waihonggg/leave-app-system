@@ -151,6 +151,9 @@ async function initializeSheet() {
 // Store the sheet name globally
 let SHEET_NAME = 'Sheet1';
 
+// Create sheets instance globally
+const sheets = google.sheets({ version: 'v4', auth });
+
 // Initialize sheet on startup
 initializeSheet().then(sheetName => {
     SHEET_NAME = sheetName;
