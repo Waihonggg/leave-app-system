@@ -288,8 +288,25 @@ app.get('/api/leave-data', requireLogin, async (req, res) => {
             leaveTaken: parseInt(userData[32]) || 0,  // AG
             leaveBalance: parseInt(userData[33]) || 0, // AH
             mcTaken: parseInt(userData[34]) || 0,     // AI
-            mcBalance: parseInt(userData[35]) || 0    // AJ
+            mcBalance: parseInt(userData[35]) || 0,    // AJ
         };
+
+        // Fetch leave application statuses
+        const leaveApplicationsResponse = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${LEAVE_APPLICATION_SHEET}!A:G`,
+        });
+
+        const leaveApplications = leaveApplicationsResponse.data.values.filter(row => row[1] === req.session.user.username);
+
+        leaveData.applications = leaveApplications.map(app => ({
+            id: app[0],
+            leaveType: app[2],
+            startDate: app[3],
+            endDate: app[4],
+            reason: app[5],
+            status: app[6]
+        }));
 
         res.json({ success: true, data: leaveData });
     } catch (error) {
@@ -342,10 +359,62 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
                 values: [[applicationID]]
             }
         });
-        // 2. Send email to manager (replace with actual manager's email)
-        // TODO: Fetch manager's email from Leave Data sheet based on username
-        const managerEmail = 'manager@example.com'; // Replace with the actual manager's email
-        const mailOptions = {
+         // 2. Get current leave data from 'Leave Data' sheet
+        const leaveDataResponse = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${SHEET_NAME}!AG${rowIndex}:AJ${rowIndex}`, // Get leaveTaken, leaveBalance, mcTaken, mcBalance
+        });
+
+        const leaveData = leaveDataResponse.data.values[0];
+
+        let leaveTaken = parseInt(leaveData[0]) || 0;
+        let leaveBalance = parseInt(leaveData[1]) || 0;
+        let mcTaken = parseInt(leaveData[2]) || 0;
+        let mcBalance = parseInt(leaveData[3]) || 0;
+
+        // 3. Update leave data based on leave type
+        if (leaveType === 'MC') {
+            mcTaken += days;
+            mcBalance -= days;
+        } else {
+            leaveTaken += days;
+            leaveBalance -= days;
+        }
+
+        // 4. Update 'Leave Data' sheet with new values
+        await sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId: SPREADSHEET_ID,
+            resource: {
+                valueInputOption: 'USER_ENTERED',
+                data: [
+                    {
+                        range: `${SHEET_NAME}!AG${rowIndex}`,
+                        values: [[leaveTaken]],
+                    },
+                    {
+                        range: `${SHEET_NAME}!AH${rowIndex}`,
+                        values: [[leaveBalance]],
+                    },
+                    {
+                        range: `${SHEET_NAME}!AI${rowIndex}`,
+                        values: [[mcTaken]],
+                    },
+                    {
+                        range: `${SHEET_NAME}!AJ${rowIndex}`,
+                        values: [[mcBalance]],
+                    },
+                ],
+            },
+        });
+        // 5. Get applicant and manager emails
+        const applicantEmail = await getApplicantEmail(username);
+        const managerEmail = await getManagerEmail(username);
+
+        if (!applicantEmail || !managerEmail) {
+            return res.status(400).json({ success: false, message: 'Applicant or manager email not found.' });
+        }
+        // 6. Send email to manager
+        const mailOptionsToManager = {
             from: process.env.EMAIL_USER,
             to: managerEmail,
             subject: 'Leave Application for Approval',
@@ -359,11 +428,11 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
             `
         };
 
-        transporter.sendMail(mailOptions, (error, info) => {
+        transporter.sendMail(mailOptionsToManager, (error, info) => {
             if (error) {
-                console.error('Error sending email:', error);
+                console.error('Error sending email to manager:', error);
             } else {
-                console.log('Email sent:', info.response);
+                console.log('Email sent to manager:', info.response);
             }
         });
 
@@ -403,13 +472,14 @@ app.get('/api/approve-leave', async (req, res) => {
         const endDate = leaveDetails[3];
         const reason = leaveDetails[4];
 
-        // 3. Update 'Leave Data' sheet (if needed, based on leave type and dates)
-        // TODO: Implement logic to update the 'Leave Data' sheet
+        // 3. Get applicant email
+        const applicantEmail = await getApplicantEmail(username);
 
+        if (!applicantEmail) {
+            return res.status(400).send('Applicant email not found.');
+        }
         // 4. Send email to applicant
-        // TODO: Fetch applicant's email from Leave Data sheet based on username
-        const applicantEmail = 'applicant@example.com'; // Replace with the actual applicant's email
-        const mailOptions = {
+        const mailOptionsToApplicant = {
             from: process.env.EMAIL_USER,
             to: applicantEmail,
             subject: 'Leave Application Approved',
@@ -420,11 +490,11 @@ app.get('/api/approve-leave', async (req, res) => {
                    <p><strong>Reason:</strong> ${reason}</p>`
         };
 
-        transporter.sendMail(mailOptions, (error, info) => {
+        transporter.sendMail(mailOptionsToApplicant, (error, info) => {
             if (error) {
-                console.error('Error sending email:', error);
+                console.error('Error sending email to applicant:', error);
             } else {
-                console.log('Email sent:', info.response);
+                console.log('Email sent to applicant:', info.response);
             }
         });
 
@@ -464,10 +534,14 @@ app.get('/api/reject-leave', async (req, res) => {
         const endDate = leaveDetails[3];
         const reason = leaveDetails[4];
 
-        // 3. Send email to applicant
-        // TODO: Fetch applicant's email from Leave Data sheet based on username
-        const applicantEmail = 'applicant@example.com'; // Replace with the actual applicant's email
-        const mailOptions = {
+         // 3. Get applicant email
+        const applicantEmail = await getApplicantEmail(username);
+
+        if (!applicantEmail) {
+            return res.status(400).send('Applicant email not found.');
+        }
+        // 4. Send email to applicant
+        const mailOptionsToApplicant = {
             from: process.env.EMAIL_USER,
             to: applicantEmail,
             subject: 'Leave Application Rejected',
@@ -478,11 +552,11 @@ app.get('/api/reject-leave', async (req, res) => {
                    <p><strong>Reason:</strong> ${reason}</p>`
         };
 
-        transporter.sendMail(mailOptions, (error, info) => {
+        transporter.sendMail(mailOptionsToApplicant, (error, info) => {
             if (error) {
-                console.error('Error sending email:', error);
+                console.error('Error sending email to applicant:', error);
             } else {
-                console.log('Email sent:', info.response);
+                console.log('Email sent to applicant:', info.response);
             }
         });
 
@@ -506,6 +580,61 @@ function getColumnIndex(column) {
     return index - 1;
 }
 
+// Function to get applicant's email from Leave Data sheet
+async function getApplicantEmail(username) {
+    try {
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${SHEET_NAME}!A:C`, // Assuming email is in column C
+        });
+
+        const rows = response.data.values;
+        const userRow = rows.find(row => row[0] === username); // Find the row with the matching username
+
+        if (userRow && userRow[2]) {
+            return userRow[2]; // Return the email from column C
+        } else {
+            console.log('Applicant email not found for username:', username);
+            return null;
+        }
+    } catch (error) {
+        console.error('Error getting applicant email:', error);
+        return null;
+    }
+}
+
+// Function to get manager's email from Leave Data sheet
+async function getManagerEmail(username) {
+    try {
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${SHEET_NAME}!A:D`, // Assuming manager's username is in column D
+        });
+
+        const rows = response.data.values;
+        const userRow = rows.find(row => row[0] === username); // Find the row with the matching username
+
+        if (!userRow || !userRow[3]) {
+            console.log('Manager username not found for username:', username);
+            return null;
+        }
+
+        const managerUsername = userRow[3];
+
+        // Find the manager's email based on their username
+        const managerRow = rows.find(row => row[0] === managerUsername);
+
+        if (managerRow && managerRow[2]) {
+            return managerRow[2]; // Return the manager's email from column C
+        } else {
+            console.log('Manager email not found for manager username:', managerUsername);
+            return null;
+        }
+    } catch (error) {
+        console.error('Error getting manager email:', error);
+        return null;
+    }
+}
 // Logout endpoint
 app.post('/api/logout', (req, res) => {
     req.session.destroy(err => {
