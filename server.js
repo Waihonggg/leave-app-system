@@ -257,7 +257,7 @@ app.post('/api/login', async (req, res) => {
 
 // Get user leave data
 app.get('/api/leave-data', requireLogin, async (req, res) => {
-   try {
+    try {
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
             range: `${SHEET_NAME}!A${req.session.user.rowIndex}:AF${req.session.user.rowIndex}`,
@@ -300,6 +300,24 @@ app.get('/api/leave-data', requireLogin, async (req, res) => {
             mcTaken: parseInt(userData[34]) || 0,     // AI
             mcBalance: parseInt(userData[35]) || 0,    // AJ
         };
+
+        // Update Leave Taken and Leave Balance in Google Sheet
+        await sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId: SPREADSHEET_ID,
+            resource: {
+                valueInputOption: 'USER_ENTERED',
+                data: [
+                    {
+                        range: `${SHEET_NAME}!AG${req.session.user.rowIndex}`,
+                        values: [[leaveTaken]],
+                    },
+                    {
+                        range: `${SHEET_NAME}!AH${req.session.user.rowIndex}`,
+                        values: [[leaveBalance]],
+                    },
+                ],
+            },
+        });
 
         // Fetch leave application statuses
         const leaveApplicationsResponse = await sheets.spreadsheets.values.get({
