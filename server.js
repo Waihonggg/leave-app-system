@@ -257,20 +257,30 @@ app.post('/api/login', async (req, res) => {
 
 // Get user leave data
 app.get('/api/leave-data', requireLogin, async (req, res) => {
-    try {
+   try {
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!A${req.session.user.rowIndex}:AK${req.session.user.rowIndex}`,
+            range: `${SHEET_NAME}!A${req.session.user.rowIndex}:AF${req.session.user.rowIndex}`,
         });
 
         const userData = response.data.values[0];
+
+        // Calculate total leave taken from monthly data
+        let totalLeaveTaken = 0;
+        for (let i = 8; i <= 29; i += 2) { // Iterate over leave columns (I, K, M, ..., AE)
+            totalLeaveTaken += parseInt(userData[i]) || 0;
+        }
+
+        const totalLeave = parseInt(userData[7]) || 0;  // H
+        const leaveTaken = userData[32] === undefined ? totalLeaveTaken : parseInt(userData[32]) || 0;  // AG
+        const leaveBalance = userData[33] === undefined ? totalLeave - leaveTaken : parseInt(userData[33]) || 0; // AH, dynamic calculation
 
         const leaveData = {
             username: userData[0],
             carryForward: parseInt(userData[4]) || 0,  // E
             annualLeave: parseInt(userData[5]) || 0,   // F
             compassionateLeave: parseInt(userData[6]) || 0,  // G
-            totalLeave: parseInt(userData[7]) || 0,   // H
+            totalLeave: totalLeave,   // H
             monthlyData: {
                 Jan: { leave: parseInt(userData[8]) || 0, mc: parseInt(userData[9]) || 0 },   // I, J
                 Feb: { leave: parseInt(userData[10]) || 0, mc: parseInt(userData[11]) || 0 },  // K, L
@@ -285,8 +295,8 @@ app.get('/api/leave-data', requireLogin, async (req, res) => {
                 Nov: { leave: parseInt(userData[28]) || 0, mc: parseInt(userData[29]) || 0 }, // AC, AD
                 Dec: { leave: parseInt(userData[30]) || 0, mc: parseInt(userData[31]) || 0 }  // AE, AF
             },
-            leaveTaken: parseInt(userData[32]) || 0,  // AG
-            leaveBalance: parseInt(userData[33]) || 0, // AH
+            leaveTaken: leaveTaken,  // AG
+            leaveBalance: leaveBalance, // AH
             mcTaken: parseInt(userData[34]) || 0,     // AI
             mcBalance: parseInt(userData[35]) || 0,    // AJ
         };
@@ -320,6 +330,14 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
     const { leaveType, startDate, endDate, reason, days } = req.body;
     const rowIndex = req.session.user.rowIndex;
     const username = req.session.user.username; // Get username from session
+
+    // Weekend check
+    const startDay = new Date(startDate).getDay(); // 0 = Sunday, 6 = Saturday
+    const endDay = new Date(endDate).getDay();
+
+    if (startDay === 0 || startDay === 6 || endDay === 0 || endDay === 6) {
+        return res.status(400).json({ success: false, message: 'Leave applications cannot include weekends.' });
+    }
 
     try {
         // 1. Add leave application to 'Leave Application' sheet
@@ -362,24 +380,18 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
          // 2. Get current leave data from 'Leave Data' sheet
         const leaveDataResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!AG${rowIndex}:AJ${rowIndex}`, // Get leaveTaken, leaveBalance, mcTaken, mcBalance
+            range: `${SHEET_NAME}!H${rowIndex}:AH${rowIndex}`, // Get totalLeave, leaveTaken, leaveBalance, mcTaken, mcBalance
         });
 
         const leaveData = leaveDataResponse.data.values[0];
 
-        let leaveTaken = parseInt(leaveData[0]) || 0;
-        let leaveBalance = parseInt(leaveData[1]) || 0;
-        let mcTaken = parseInt(leaveData[2]) || 0;
-        let mcBalance = parseInt(leaveData[3]) || 0;
+        const totalLeave = parseInt(leaveData[0]) || 0;
+        let leaveTaken = leaveData[1] === undefined ? 0 : parseInt(leaveData[1]) || 0;
+        let leaveBalance = leaveData[2] === undefined ? totalLeave - leaveTaken : parseInt(leaveData[2]) || 0;
 
         // 3. Update leave data based on leave type
-        if (leaveType === 'MC') {
-            mcTaken += days;
-            mcBalance -= days;
-        } else {
-            leaveTaken += days;
-            leaveBalance -= days;
-        }
+       leaveTaken += days;
+       leaveBalance -= days;
 
         // 4. Update 'Leave Data' sheet with new values
         await sheets.spreadsheets.values.batchUpdate({
@@ -394,14 +406,6 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
                     {
                         range: `${SHEET_NAME}!AH${rowIndex}`,
                         values: [[leaveBalance]],
-                    },
-                    {
-                        range: `${SHEET_NAME}!AI${rowIndex}`,
-                        values: [[mcTaken]],
-                    },
-                    {
-                        range: `${SHEET_NAME}!AJ${rowIndex}`,
-                        values: [[mcBalance]],
                     },
                 ],
             },
