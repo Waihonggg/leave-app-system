@@ -6,7 +6,7 @@ const { google } = require('googleapis');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
-const nodemailer = require('nodemailer'); // Import nodemailer
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const app = express();
@@ -17,47 +17,33 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname)));
+app.set('trust proxy', 1);
 
-// Trust proxy
-app.set('trust proxy', 1) // trust first proxy
-
-// Session configuration - IMPORTANT: Use a database-backed store in production!
 let sessionConfig = {
     secret: process.env.SESSION_SECRET || 'your-secret-key',
     resave: false,
     saveUninitialized: false,
     cookie: {
-        maxAge: 3600000, // 1 hour
+        maxAge: 3600000,
         httpOnly: true,
     }
 };
-
 if (process.env.NODE_ENV === 'production') {
-    sessionConfig.cookie.secure = true; // Serve secure cookies
-    sessionConfig.cookie.sameSite = 'lax'; // or 'none' if needed
-
-    // TODO: Implement a database-backed session store (e.g., Redis, MongoDB) here
-    // For example:
-    // const RedisStore = require('connect-redis')(session);
-    // const redisClient = require('redis').createClient({ /* Redis config */ });
-    // sessionConfig.store = new RedisStore({ client: redisClient });
+    sessionConfig.cookie.secure = true;
+    sessionConfig.cookie.sameSite = 'lax';
 } else {
-    sessionConfig.cookie.secure = false; // Allow non-HTTPS cookies in development
+    sessionConfig.cookie.secure = false;
     sessionConfig.cookie.sameSite = 'lax';
 }
-
 app.use(session(sessionConfig));
 
 // Google Sheets setup
 let auth;
 try {
     if (process.env.GOOGLE_CREDENTIALS_JSON) {
-        // For production (Render) - use credentials from environment variable
-        console.log('Using Google credentials from environment variable');
         let credentials;
         try {
             credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
-            // Fix any potential URL issues
             if (credentials.auth_uri) credentials.auth_uri = credentials.auth_uri.replace('https:/', 'https://');
             if (credentials.token_uri) credentials.token_uri = credentials.token_uri.replace('https:/', 'https://');
             if (credentials.auth_provider_x509_cert_url) credentials.auth_provider_x509_cert_url = credentials.auth_provider_x509_cert_url.replace('https:/', 'https://');
@@ -66,21 +52,16 @@ try {
             console.error('Error parsing GOOGLE_CREDENTIALS_JSON:', parseError);
             throw new Error('Invalid GOOGLE_CREDENTIALS_JSON format');
         }
-
         auth = new google.auth.GoogleAuth({
-            credentials: credentials,
+            credentials,
             scopes: ['https://www.googleapis.com/auth/spreadsheets']
         });
     } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-        // Use file path from GOOGLE_APPLICATION_CREDENTIALS
-        console.log('Using Google credentials from file:', process.env.GOOGLE_APPLICATION_CREDENTIALS);
         auth = new google.auth.GoogleAuth({
             keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
             scopes: ['https://www.googleapis.com/auth/spreadsheets']
         });
     } else if (fs.existsSync('credentials.json')) {
-        // Default to local credentials.json file
-        console.log('Using Google credentials from local credentials.json file');
         auth = new google.auth.GoogleAuth({
             keyFile: 'credentials.json',
             scopes: ['https://www.googleapis.com/auth/spreadsheets']
@@ -88,8 +69,6 @@ try {
     } else {
         throw new Error('No Google credentials found. Please set GOOGLE_CREDENTIALS_JSON environment variable or provide credentials.json file.');
     }
-
-    // Test the authentication
     auth.getClient().then(() => {
         console.log('Google Sheets authentication successful');
     }).catch(err => {
@@ -100,40 +79,26 @@ try {
     process.exit(1);
 }
 
-// Sheet names based on user input
 const SHEET_NAME = 'Leave Data';
 const LEAVE_APPLICATION_SHEET = 'Leave Application';
-const MASTER_CALENDAR_SHEET = 'Master Calendar';
-
-// Create sheets instance globally
 const sheets = google.sheets({ version: 'v4', auth });
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '1YPp78gjT9T_aLXau6FUVc0AxEftHnOijBDjrb3qV4rc';
 
-// Initialize Google Sheets (create sheet if needed)
 async function initializeSheet() {
     try {
         const sheetsInstance = google.sheets({ version: 'v4', auth });
-
-        // First, try to get spreadsheet metadata
         const metadata = await sheetsInstance.spreadsheets.get({
             spreadsheetId: process.env.SPREADSHEET_ID
         });
-
         console.log('Connected to spreadsheet:', metadata.data.properties.title);
         console.log('Available sheets:', metadata.data.sheets.map(s => s.properties.title));
-
-        // Check if we have any sheets with data
         const firstSheetName = SHEET_NAME;
-
-        // Try to read the first row to check if headers exist
         try {
             const response = await sheetsInstance.spreadsheets.values.get({
                 spreadsheetId: process.env.SPREADSHEET_ID,
                 range: `${firstSheetName}!A1:B1`
             });
-
             if (!response.data.values || response.data.values.length === 0) {
-                // No headers, let's add them
                 console.log('Adding headers to the sheet...');
                 await sheetsInstance.spreadsheets.values.update({
                     spreadsheetId: process.env.SPREADSHEET_ID,
@@ -143,8 +108,6 @@ async function initializeSheet() {
                         values: [['Username', 'Password']]
                     }
                 });
-
-                // Add a default admin user
                 await sheetsInstance.spreadsheets.values.append({
                     spreadsheetId: process.env.SPREADSHEET_ID,
                     range: `${firstSheetName}!A:B`,
@@ -153,104 +116,66 @@ async function initializeSheet() {
                         values: [['admin', await bcrypt.hash('admin123', 10)]]
                     }
                 });
-
                 console.log('Sheet initialized with headers and default admin user (username: admin, password: admin123)');
             }
         } catch (err) {
             console.log('Sheet seems empty, initializing...');
         }
-
         return firstSheetName;
     } catch (error) {
         console.error('Error initializing sheet:', error);
         throw error;
     }
 }
-
-// Initialize sheet on startup
 initializeSheet().then(sheetName => {
     console.log(`Using sheet: ${sheetName}`);
 }).catch(err => {
     console.error('Failed to initialize sheet:', err);
 });
 
-// Helper function to get month column
-function getMonthColumn(month) {
-    const monthColumns = {
-        'Jan': { leave: 'I', mc: 'J' },
-        'Feb': { leave: 'K', mc: 'L' },
-        'March': { leave: 'M', mc: 'N' },
-        'Apr': { leave: 'O', mc: 'P' },
-        'May': { leave: 'Q', mc: 'R' },
-        'June': { leave: 'S', mc: 'T' },
-        'July': { leave: 'U', mc: 'V' },
-        'Aug': { leave: 'W', mc: 'X' },
-        'Sept': { leave: 'Y', mc: 'Z' },
-        'Oct': { leave: 'AA', mc: 'AB' },
-        'Nov': { leave: 'AC', mc: 'AD' },
-        'Dec': { leave: 'AE', mc: 'AF' }
-    };
-    return monthColumns[month];
-}
-
 // Middleware to check if user is logged in
 function requireLogin(req, res, next) {
     if (req.session && req.session.user) {
-        // Session exists, proceed
-        console.log("User is authenticated");
         next();
     } else {
-        // No session, redirect to login
-        console.log("Unauthorized access attempt");
-        return res.status(401).json({ success: false, message: 'Not authenticated' });  // Or redirect
+        return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
 }
 
-// Configure Nodemailer (replace with your email provider details)
+// Nodemailer setup
 const transporter = nodemailer.createTransport({
-    service: 'gmail', // e.g., 'gmail', 'Outlook'
+    service: 'gmail',
     auth: {
-        user: process.env.EMAIL_USER, // Your email address
-        pass: process.env.EMAIL_PASS  // Your email password or app password
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
     }
 });
 
-// Routes
+// Static login page
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'login.html'));
 });
 
-// Login endpoint
+// Login
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
-
     try {
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
             range: `${SHEET_NAME}!A:B`,
         });
-
         const rows = response.data.values;
-        const userIndex = rows.findIndex(row =>
-            row[0] === username && row[1] === password
-        );
-
+        const userIndex = rows.findIndex(row => row[0] === username && row[1] === password);
         if (userIndex > 0) {
             req.session.user = { username, rowIndex: userIndex + 1 };
-            req.session.save(err => {  // Add this
-                if (err) {
-                    console.error("Error saving session:", err);
-                    return res.status(500).json({ success: false, message: 'Session error' }); // Send error response
-                } else {
-                    console.log("Session saved successfully");
-                    res.json({ success: true, message: 'Login successful' });
-                }
+            req.session.save(err => {
+                if (err) res.status(500).json({ success: false, message: 'Session error' });
+                else res.json({ success: true, message: 'Login successful' });
             });
         } else {
             res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
     } catch (error) {
-        console.error('Login error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
@@ -262,83 +187,63 @@ app.get('/api/leave-data', requireLogin, async (req, res) => {
             spreadsheetId: SPREADSHEET_ID,
             range: `${SHEET_NAME}!A${req.session.user.rowIndex}:AF${req.session.user.rowIndex}`,
         });
-
         const userData = response.data.values[0];
-
-        // Calculate total leave taken from monthly data
         let totalLeaveTaken = 0;
-        for (let i = 8; i <= 29; i += 2) { // Iterate over leave columns (I, K, M, ..., AE)
+        for (let i = 8; i <= 29; i += 2) {
             totalLeaveTaken += parseInt(userData[i]) || 0;
         }
-
-        const totalLeave = parseInt(userData[7]) || 0;  // H
-        const leaveTaken = userData[32] === undefined ? totalLeaveTaken : parseInt(userData[32]) || 0;  // AG
-        const leaveBalance = userData[33] === undefined ? totalLeave - leaveTaken : parseInt(userData[33]) || 0; // AH, dynamic calculation
-
-        const leaveData = {
-            username: userData[0],
-            carryForward: parseInt(userData[4]) || 0,  // E
-            annualLeave: parseInt(userData[5]) || 0,   // F
-            compassionateLeave: parseInt(userData[6]) || 0,  // G
-            totalLeave: totalLeave,   // H
-            monthlyData: {
-                Jan: { leave: parseInt(userData[8]) || 0, mc: parseInt(userData[9]) || 0 },   // I, J
-                Feb: { leave: parseInt(userData[10]) || 0, mc: parseInt(userData[11]) || 0 },  // K, L
-                March: { leave: parseInt(userData[12]) || 0, mc: parseInt(userData[13]) || 0 }, // M, N
-                Apr: { leave: parseInt(userData[14]) || 0, mc: parseInt(userData[15]) || 0 }, // O, P
-                May: { leave: parseInt(userData[16]) || 0, mc: parseInt(userData[17]) || 0 }, // Q, R
-                June: { leave: parseInt(userData[18]) || 0, mc: parseInt(userData[19]) || 0 }, // S, T
-                July: { leave: parseInt(userData[20]) || 0, mc: parseInt(userData[21]) || 0 }, // U, V
-                Aug: { leave: parseInt(userData[22]) || 0, mc: parseInt(userData[23]) || 0 }, // W, X
-                Sept: { leave: parseInt(userData[24]) || 0, mc: parseInt(userData[25]) || 0 }, // Y, Z
-                Oct: { leave: parseInt(userData[26]) || 0, mc: parseInt(userData[27]) || 0 }, // AA, AB
-                Nov: { leave: parseInt(userData[28]) || 0, mc: parseInt(userData[29]) || 0 }, // AC, AD
-                Dec: { leave: parseInt(userData[30]) || 0, mc: parseInt(userData[31]) || 0 }  // AE, AF
-            },
-            leaveTaken: leaveTaken,  // AG
-            leaveBalance: leaveBalance, // AH
-            mcTaken: parseInt(userData[34]) || 0,     // AI
-            mcBalance: parseInt(userData[35]) || 0,    // AJ
-        };
-
-        // Update Leave Taken and Leave Balance in Google Sheet
+        const totalLeave = parseInt(userData[7]) || 0;
+        const leaveTaken = userData[32] === undefined ? totalLeaveTaken : parseInt(userData[32]) || 0;
+        const leaveBalance = userData[33] === undefined ? totalLeave - leaveTaken : parseInt(userData[33]) || 0;
         await sheets.spreadsheets.values.batchUpdate({
             spreadsheetId: SPREADSHEET_ID,
             resource: {
                 valueInputOption: 'USER_ENTERED',
                 data: [
-                    {
-                        range: `${SHEET_NAME}!AG${req.session.user.rowIndex}`,
-                        values: [[leaveTaken]],
-                    },
-                    {
-                        range: `${SHEET_NAME}!AH${req.session.user.rowIndex}`,
-                        values: [[leaveBalance]],
-                    },
+                    { range: `${SHEET_NAME}!AG${req.session.user.rowIndex}`, values: [[leaveTaken]] },
+                    { range: `${SHEET_NAME}!AH${req.session.user.rowIndex}`, values: [[leaveBalance]] }
                 ],
             },
         });
-
-        // Fetch leave application statuses
         const leaveApplicationsResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
             range: `${LEAVE_APPLICATION_SHEET}!A:G`,
         });
-
-        const leaveApplications = leaveApplicationsResponse.data.values.filter(row => row[1] === req.session.user.username);
-
-        leaveData.applications = leaveApplications.map(app => ({
-            id: app[0],
-            leaveType: app[2],
-            startDate: app[3],
-            endDate: app[4],
-            reason: app[5],
-            status: app[6]
-        }));
-
-        res.json({ success: true, data: leaveData });
+        const leaveApplications = leaveApplicationsResponse.data.values
+            .filter(row => row[1] === req.session.user.username)
+            .map(app => ({
+                id: app[0], leaveType: app[2], startDate: app[3], endDate: app[4], reason: app[5], status: app[6]
+            }));
+        res.json({
+            success: true,
+            data: {
+                username: userData[0],
+                carryForward: parseInt(userData[4]) || 0,
+                annualLeave: parseInt(userData[5]) || 0,
+                compassionateLeave: parseInt(userData[6]) || 0,
+                totalLeave,
+                monthlyData: {
+                    Jan: { leave: parseInt(userData[8]) || 0, mc: parseInt(userData[9]) || 0 },
+                    Feb: { leave: parseInt(userData[10]) || 0, mc: parseInt(userData[11]) || 0 },
+                    March: { leave: parseInt(userData[12]) || 0, mc: parseInt(userData[13]) || 0 },
+                    Apr: { leave: parseInt(userData[14]) || 0, mc: parseInt(userData[15]) || 0 },
+                    May: { leave: parseInt(userData[16]) || 0, mc: parseInt(userData[17]) || 0 },
+                    June: { leave: parseInt(userData[18]) || 0, mc: parseInt(userData[19]) || 0 },
+                    July: { leave: parseInt(userData[20]) || 0, mc: parseInt(userData[21]) || 0 },
+                    Aug: { leave: parseInt(userData[22]) || 0, mc: parseInt(userData[23]) || 0 },
+                    Sept: { leave: parseInt(userData[24]) || 0, mc: parseInt(userData[25]) || 0 },
+                    Oct: { leave: parseInt(userData[26]) || 0, mc: parseInt(userData[27]) || 0 },
+                    Nov: { leave: parseInt(userData[28]) || 0, mc: parseInt(userData[29]) || 0 },
+                    Dec: { leave: parseInt(userData[30]) || 0, mc: parseInt(userData[31]) || 0 }
+                },
+                leaveTaken,
+                leaveBalance,
+                mcTaken: parseInt(userData[34]) || 0,
+                mcBalance: parseInt(userData[35]) || 0,
+                applications: leaveApplications
+            }
+        });
     } catch (error) {
-        console.error('Error fetching leave data:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
@@ -347,95 +252,65 @@ app.get('/api/leave-data', requireLogin, async (req, res) => {
 app.post('/api/apply-leave', requireLogin, async (req, res) => {
     const { leaveType, startDate, endDate, reason, days } = req.body;
     const rowIndex = req.session.user.rowIndex;
-    const username = req.session.user.username; // Get username from session
-
-    // Weekend check
-    const startDay = new Date(startDate).getDay(); // 0 = Sunday, 6 = Saturday
+    const username = req.session.user.username;
+    const startDay = new Date(startDate).getDay();
     const endDay = new Date(endDate).getDay();
-
     if (startDay === 0 || startDay === 6 || endDay === 0 || endDay === 6) {
         return res.status(400).json({ success: false, message: 'Leave applications cannot include weekends.' });
     }
-
     try {
-        // 1. Add leave application to 'Leave Application' sheet
         const leaveApplication = [
             username,
             leaveType,
             startDate,
             endDate,
             reason,
-            'Pending' // Initial status
+            'Pending'
         ];
-
         const appendResponse = await sheets.spreadsheets.values.append({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${LEAVE_APPLICATION_SHEET}!B:G`, // Append to the end of the sheet, start from column B
+            range: `${LEAVE_APPLICATION_SHEET}!B:G`,
             valueInputOption: 'USER_ENTERED',
-            requestBody: {
-                values: [leaveApplication]
-            }
+            requestBody: { values: [leaveApplication] }
         });
-
-        const applicationRow = appendResponse.data.updates.updatedRange.split('!')[1].replace(/[^0-9]/g, ''); // extract the added row number
-
-        //Get the ID for leave application
-         const getIDResponse = await sheets.spreadsheets.values.get({
+        const applicationRow = appendResponse.data.updates.updatedRange.split('!')[1].replace(/[^0-9]/g, '');
+        const getIDResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
             range: `${LEAVE_APPLICATION_SHEET}!A:A`,
         });
-
         const applicationID = (getIDResponse.data.values.length);
-
         await sheets.spreadsheets.values.update({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${LEAVE_APPLICATION_SHEET}!A${applicationRow}`, // Update ID column
+            range: `${LEAVE_APPLICATION_SHEET}!A${applicationRow}`,
             valueInputOption: 'USER_ENTERED',
-            requestBody: {
-                values: [[applicationID]]
-            }
+            requestBody: { values: [[applicationID]] }
         });
-         // 2. Get current leave data from 'Leave Data' sheet
+
         const leaveDataResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!H${rowIndex}:AH${rowIndex}`, // Get totalLeave, leaveTaken, leaveBalance, mcTaken, mcBalance
+            range: `${SHEET_NAME}!H${rowIndex}:AH${rowIndex}`,
         });
-
         const leaveData = leaveDataResponse.data.values[0];
-
         const totalLeave = parseInt(leaveData[0]) || 0;
         let leaveTaken = leaveData[1] === undefined ? 0 : parseInt(leaveData[1]) || 0;
         let leaveBalance = leaveData[2] === undefined ? totalLeave - leaveTaken : parseInt(leaveData[2]) || 0;
-
-        // 3. Update leave data based on leave type
-       leaveTaken += days;
-       leaveBalance -= days;
-
-        // 4. Update 'Leave Data' sheet with new values
+        leaveTaken += days;
+        leaveBalance -= days;
         await sheets.spreadsheets.values.batchUpdate({
             spreadsheetId: SPREADSHEET_ID,
             resource: {
                 valueInputOption: 'USER_ENTERED',
                 data: [
-                    {
-                        range: `${SHEET_NAME}!AG${rowIndex}`,
-                        values: [[leaveTaken]],
-                    },
-                    {
-                        range: `${SHEET_NAME}!AH${rowIndex}`,
-                        values: [[leaveBalance]],
-                    },
+                    { range: `${SHEET_NAME}!AG${rowIndex}`, values: [[leaveTaken]] },
+                    { range: `${SHEET_NAME}!AH${rowIndex}`, values: [[leaveBalance]] }
                 ],
             },
         });
-        // 5. Get applicant and manager emails
         const applicantEmail = await getApplicantEmail(username);
         const managerEmail = await getManagerEmail(username);
-
         if (!applicantEmail || !managerEmail) {
             return res.status(400).json({ success: false, message: 'Applicant or manager email not found.' });
         }
-        // 6. Send email to manager
         const mailOptionsToManager = {
             from: process.env.EMAIL_USER,
             to: managerEmail,
@@ -446,181 +321,110 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
                 <p><strong>Start Date:</strong> ${startDate}</p>
                 <p><strong>End Date:</strong> ${endDate}</p>
                 <p><strong>Reason:</strong> ${reason}</p>
-                <p><a href="[YOUR_BASE_URL]/api/approve-leave?row=${applicationRow}">Approve</a> | <a href="[YOUR_BASE_URL]/api/reject-leave?row=${applicationRow}">Reject</a></p>
+                <p>This is an automated notification.</p>
             `
         };
-
-        transporter.sendMail(mailOptionsToManager, (error, info) => {
-            if (error) {
-                console.error('Error sending email to manager:', error);
-            } else {
-                console.log('Email sent to manager:', info.response);
-            }
-        });
-
+        try {
+            await transporter.sendMail(mailOptionsToManager);
+            console.log('Email sent to manager');
+        } catch (err) {
+            console.error('Error sending email to manager:', err);
+        }
         res.json({ success: true, message: 'Leave application submitted successfully.' });
-
     } catch (error) {
-        console.error('Error applying leave:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
 
-// Approve leave endpoint (called by manager via email link)
 app.get('/api/approve-leave', async (req, res) => {
     const applicationRow = req.query.row;
-
     try {
-        // 1. Update 'Leave Application' sheet
         await sheets.spreadsheets.values.update({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${LEAVE_APPLICATION_SHEET}!G${applicationRow}`, // Update status column
+            range: `${LEAVE_APPLICATION_SHEET}!G${applicationRow}`,
             valueInputOption: 'USER_ENTERED',
-            requestBody: {
-                values: [['Approved']]
-            }
+            requestBody: { values: [['Approved']] }
         });
-
-        // 2. Get leave application details
         const leaveDetailsResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
             range: `${LEAVE_APPLICATION_SHEET}!B${applicationRow}:F${applicationRow}`,
         });
-
         const leaveDetails = leaveDetailsResponse.data.values[0];
         const username = leaveDetails[0];
-        const leaveType = leaveDetails[1];
-        const startDate = leaveDetails[2];
-        const endDate = leaveDetails[3];
-        const reason = leaveDetails[4];
-
-        // 3. Get applicant email
         const applicantEmail = await getApplicantEmail(username);
-
-        if (!applicantEmail) {
-            return res.status(400).send('Applicant email not found.');
-        }
-        // 4. Send email to applicant
+        if (!applicantEmail) return res.status(400).send('Applicant email not found.');
         const mailOptionsToApplicant = {
             from: process.env.EMAIL_USER,
             to: applicantEmail,
             subject: 'Leave Application Approved',
             html: `<p>Your leave application has been approved.</p>
-                   <p><strong>Leave Type:</strong> ${leaveType}</p>
-                   <p><strong>Start Date:</strong> ${startDate}</p>
-                   <p><strong>End Date:</strong> ${endDate}</p>
-                   <p><strong>Reason:</strong> ${reason}</p>`
+                <p><strong>Leave Type:</strong> ${leaveDetails[1]}</p>
+                <p><strong>Start Date:</strong> ${leaveDetails[2]}</p>
+                <p><strong>End Date:</strong> ${leaveDetails[3]}</p>
+                <p><strong>Reason:</strong> ${leaveDetails[4]}</p>`
         };
-
-        transporter.sendMail(mailOptionsToApplicant, (error, info) => {
-            if (error) {
-                console.error('Error sending email to applicant:', error);
-            } else {
-                console.log('Email sent to applicant:', info.response);
-            }
-        });
-
-        res.send('Leave application approved successfully.'); // Or redirect to a confirmation page
-
+        try {
+            await transporter.sendMail(mailOptionsToApplicant);
+            console.log('Email sent to applicant');
+        } catch (err) {
+            console.error('Error sending email to applicant:', err);
+        }
+        res.send('Leave application approved successfully.');
     } catch (error) {
-        console.error('Error approving leave:', error);
         res.status(500).send('Error approving leave.');
     }
 });
 
-// Reject leave endpoint (called by manager via email link)
 app.get('/api/reject-leave', async (req, res) => {
     const applicationRow = req.query.row;
-
     try {
-        // 1. Update 'Leave Application' sheet
         await sheets.spreadsheets.values.update({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${LEAVE_APPLICATION_SHEET}!G${applicationRow}`, // Update status column
+            range: `${LEAVE_APPLICATION_SHEET}!G${applicationRow}`,
             valueInputOption: 'USER_ENTERED',
-            requestBody: {
-                values: [['Rejected']]
-            }
+            requestBody: { values: [['Rejected']] }
         });
-
-        // 2. Get leave application details
         const leaveDetailsResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
             range: `${LEAVE_APPLICATION_SHEET}!B${applicationRow}:F${applicationRow}`,
         });
-
-       const leaveDetails = leaveDetailsResponse.data.values[0];
+        const leaveDetails = leaveDetailsResponse.data.values[0];
         const username = leaveDetails[0];
-        const leaveType = leaveDetails[1];
-        const startDate = leaveDetails[2];
-        const endDate = leaveDetails[3];
-        const reason = leaveDetails[4];
-
-         // 3. Get applicant email
         const applicantEmail = await getApplicantEmail(username);
-
-        if (!applicantEmail) {
-            return res.status(400).send('Applicant email not found.');
-        }
-        // 4. Send email to applicant
+        if (!applicantEmail) return res.status(400).send('Applicant email not found.');
         const mailOptionsToApplicant = {
             from: process.env.EMAIL_USER,
             to: applicantEmail,
             subject: 'Leave Application Rejected',
             html: `<p>Your leave application has been rejected.</p>
-                   <p><strong>Leave Type:</strong> ${leaveType}</p>
-                   <p><strong>Start Date:</strong> ${startDate}</p>
-                   <p><strong>End Date:</strong> ${endDate}</p>
-                   <p><strong>Reason:</strong> ${reason}</p>`
+                <p><strong>Leave Type:</strong> ${leaveDetails[1]}</p>
+                <p><strong>Start Date:</strong> ${leaveDetails[2]}</p>
+                <p><strong>End Date:</strong> ${leaveDetails[3]}</p>
+                <p><strong>Reason:</strong> ${leaveDetails[4]}</p>`
         };
-
-        transporter.sendMail(mailOptionsToApplicant, (error, info) => {
-            if (error) {
-                console.error('Error sending email to applicant:', error);
-            } else {
-                console.log('Email sent to applicant:', info.response);
-            }
-        });
-
-        res.send('Leave application rejected successfully.'); // Or redirect to a confirmation page
-
+        try {
+            await transporter.sendMail(mailOptionsToApplicant);
+            console.log('Email sent to applicant');
+        } catch (err) {
+            console.error('Error sending email to applicant:', err);
+        }
+        res.send('Leave application rejected successfully.');
     } catch (error) {
-        console.error('Error rejecting leave:', error);
         res.status(500).send('Error rejecting leave.');
     }
 });
-
-// Helper function to get column index
-function getColumnIndex(column) {
-    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    let index = 0;
-
-    for (let i = 0; i < column.length; i++) {
-        index = index * 26 + alphabet.indexOf(column[i]) + 1;
-    }
-
-    return index - 1;
-}
 
 // Function to get applicant's email from Leave Data sheet
 async function getApplicantEmail(username) {
     try {
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!A:C`, // Assuming email is in column C
+            range: `${SHEET_NAME}!A:C`,
         });
-
         const rows = response.data.values;
-        const userRow = rows.find(row => row[0] === username); // Find the row with the matching username
-
-        if (userRow && userRow[2]) {
-            return userRow[2]; // Return the email from column C
-        } else {
-            console.log('Applicant email not found for username:', username);
-            return null;
-        }
+        const userRow = rows.find(row => row[0] === username);
+        return userRow && userRow[2] ? userRow[2] : null;
     } catch (error) {
-        console.error('Error getting applicant email:', error);
         return null;
     }
 }
@@ -630,40 +434,22 @@ async function getManagerEmail(username) {
     try {
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!A:D`, // Assuming manager's username is in column D
+            range: `${SHEET_NAME}!A:D`,
         });
-
         const rows = response.data.values;
-        const userRow = rows.find(row => row[0] === username); // Find the row with the matching username
-
-        if (!userRow || !userRow[3]) {
-            console.log('Manager username not found for username:', username);
-            return null;
-        }
-
+        const userRow = rows.find(row => row[0] === username);
+        if (!userRow || !userRow[3]) return null;
         const managerUsername = userRow[3];
-
-        // Find the manager's email based on their username
         const managerRow = rows.find(row => row[0] === managerUsername);
-
-        if (managerRow && managerRow[2]) {
-            return managerRow[2]; // Return the manager's email from column C
-        } else {
-            console.log('Manager email not found for manager username:', managerUsername);
-            return null;
-        }
+        return managerRow && managerRow[2] ? managerRow[2] : null;
     } catch (error) {
-        console.error('Error getting manager email:', error);
         return null;
     }
 }
-// Logout endpoint
+
 app.post('/api/logout', (req, res) => {
     req.session.destroy(err => {
-        if (err) {
-            console.error("Error destroying session:", err);
-            return res.status(500).json({ success: false, message: 'Logout error' });
-        }
+        if (err) return res.status(500).json({ success: false, message: 'Logout error' });
         res.json({ success: true });
     });
 });
