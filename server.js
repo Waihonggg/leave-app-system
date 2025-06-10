@@ -361,6 +361,7 @@ app.get('/api/leave-data', requireLogin, async (req, res) => {
     }
 });
 
+// Apply leave endpoint
 app.post('/api/apply-leave', requireLogin, async (req, res) => {
     console.log('--- /api/apply-leave endpoint CALLED ---');
     console.log('Session user:', JSON.stringify(req.session.user));
@@ -372,23 +373,9 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
 
     if (!leaveType || !startDate || !endDate || !days) {
         console.error('/api/apply-leave: Validation failed - Missing required fields.');
-        return res.status(400).json({ success: false, message: 'Missing required fields for leave application.' });
-    }
-
-    const numDays = parseFloat(days);
-    if (isNaN(numDays) || numDays <= 0) {
-        console.error('/api/apply-leave: Validation failed - Invalid number of days.');
-        return res.status(400).json({ success: false, message: 'Invalid number of days (must be > 0).' });
-    }
-
-    // Weekend validation
-    const startDt = new Date(startDate);
-    const endDt = new Date(endDate);
-    if (startDt.getDay() === 0 || startDt.getDay() === 6 || 
-        endDt.getDay() === 0 || endDt.getDay() === 6) {
         return res.status(400).json({ 
             success: false, 
-            message: 'Cannot apply leave for weekends. Please select workdays only.' 
+            message: 'Missing required fields for leave application.' 
         });
     }
 
@@ -410,15 +397,17 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
 
         // Add to Leave Application sheet with Pending status
         const leaveApplicationRowData = [
-            nextId.toString(),
-            username,
-            leaveType,
-            startDate,
-            endDate,
-            reason || '',
-            'Pending'  // Initial status is always Pending
+            nextId.toString(),        // ID
+            username,                 // Username
+            leaveType,               // Leave Type
+            startDate,               // Start Date
+            endDate,                 // End Date
+            reason || '',            // Reason
+            'Pending'                // Status always starts as Pending
         ];
 
+        console.log('/api/apply-leave: Attempting to append to LEAVE_APPLICATION_SHEET:', JSON.stringify(leaveApplicationRowData));
+        
         const appendResponse = await sheets.spreadsheets.values.append({
             spreadsheetId: SPREADSHEET_ID,
             range: `${LEAVE_APPLICATION_SHEET}!A:G`,
@@ -427,33 +416,14 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
             requestBody: { values: [leaveApplicationRowData] }
         });
 
+        console.log('/api/apply-leave: Append to sheet successful.');
+        
+        // Get the row number where the data was appended
         const newApplicationRowNumberInSheet = parseInt(appendResponse.data.updates.updatedRange.split('!A')[1].split(':')[0]);
-
-        // Send email notification to manager
-        if (transporter) {
-            const managerEmailAddress = await getManagerEmail(username);
-            if (managerEmailAddress) {
-                const mailOptions = {
-                    from: process.env.EMAIL_USER,
-                    to: managerEmailAddress,
-                    subject: `New Leave Application for Approval - ${username} (ID: ${nextId})`,
-                    html: `
-                        <p>A new leave application (ID: ${nextId}) has been submitted by ${username} and requires your approval.</p>
-                        <p><strong>Leave Type:</strong> ${leaveType}</p>
-                        <p><strong>Dates:</strong> ${startDate} to ${endDate} (${numDays} day(s))</p>
-                        <p><strong>Reason:</strong> ${reason || 'N/A'}</p>
-                        <hr>
-                        <p>To approve or reject this application, please visit the dashboard.</p>
-                        <p>Application ID: ${nextId}</p>
-                    `
-                };
-                await transporter.sendMail(mailOptions);
-            }
-        }
-
+        
         res.json({ 
             success: true, 
-            message: 'Leave application submitted successfully. Pending manager approval.', 
+            message: 'Leave application submitted successfully. Status: Pending', 
             applicationId: nextId.toString() 
         });
 
@@ -463,6 +433,102 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
             success: false, 
             message: `Server error submitting leave: ${error.message}` 
         });
+    }
+});
+
+// Approve/Reject leave application
+app.post('/api/:action(approve|reject)-leave', requireLogin, async (req, res) => {
+    const action = req.params.action;
+    const { row: applicationRowInSheet, id: applicationID } = req.query;
+
+    if (!applicationRowInSheet || isNaN(parseInt(applicationRowInSheet)) || !applicationID) {
+        return res.status(400).send('Valid application row number and ID are required.');
+    }
+
+    const statusToSet = action === 'approve' ? 'Approved' : 'Rejected';
+    const statusColumn = 'G'; // Status column in sheet
+
+    try {
+        // Get application details
+        const appDetailsRange = `${LEAVE_APPLICATION_SHEET}!A${applicationRowInSheet}:G${applicationRowInSheet}`;
+        const appDetailsResponse = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: appDetailsRange,
+        });
+
+        if (!appDetailsResponse.data.values || !appDetailsResponse.data.values[0]) {
+            return res.status(404).send(`Application not found at row ${applicationRowInSheet}.`);
+        }
+
+        const [
+            retrievedAppID, 
+            applicantUsername, 
+            leaveType, 
+            startDate, 
+            endDate, 
+            reasonText, 
+            currentStatus
+        ] = appDetailsResponse.data.values[0];
+
+        if (retrievedAppID !== applicationID) {
+            return res.status(400).send(`Application ID mismatch for row ${applicationRowInSheet}.`);
+        }
+
+        if (currentStatus === statusToSet) {
+            return res.send(`Application ID ${applicationID} is already ${statusToSet}.`);
+        }
+
+        // Update application status
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${LEAVE_APPLICATION_SHEET}!${statusColumn}${applicationRowInSheet}`,
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: [[statusToSet]] }
+        });
+
+        // If approved, update leave balance in the Leave Data sheet
+        if (action === 'approve') {
+            // Get user's row in Leave Data sheet
+            const userDataResponse = await sheets.spreadsheets.values.get({
+                spreadsheetId: SPREADSHEET_ID,
+                range: `${LEAVE_DATA_SHEET}!A:AJ`,
+            });
+
+            const userRowIndex = userDataResponse.data.values.findIndex(row => row[0] === applicantUsername);
+            if (userRowIndex === -1) {
+                throw new Error(`User ${applicantUsername} not found in Leave Data sheet`);
+            }
+
+            // Calculate leave days (excluding weekends)
+            const startDt = new Date(startDate);
+            const endDt = new Date(endDate);
+            let leaveDays = 0;
+            const currentDate = new Date(startDt);
+            
+            while (currentDate <= endDt) {
+                if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
+                    leaveDays++;
+                }
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+
+            // Update monthly usage (column based on start date month)
+            const monthIndex = startDt.getMonth();
+            const monthColumn = String.fromCharCode(65 + monthIndex); // A = January, B = February, etc.
+            
+            await sheets.spreadsheets.values.update({
+                spreadsheetId: SPREADSHEET_ID,
+                range: `${LEAVE_DATA_SHEET}!${monthColumn}${userRowIndex + 1}`,
+                valueInputOption: 'USER_ENTERED',
+                requestBody: { values: [[leaveDays]] }
+            });
+        }
+
+        res.send(`Leave application ID ${applicationID} has been ${statusToSet.toLowerCase()}.`);
+
+    } catch (error) {
+        console.error(`Error in /api/${action}-leave:`, error);
+        res.status(500).send(`Error ${action}ing leave: ${error.message}`);
     }
 });
 
