@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
+
 async function loadLeaveData() {
     try {
         // This fetch relies on the browser sending the session cookie automatically.
@@ -86,6 +87,35 @@ async function loadLeaveData() {
     }
 }
 
+// Add this to your existing dashboard.js
+
+function updateLeaveApplicationsTable(applications) {
+    const tableBody = document.getElementById('leaveApplicationsBody');
+    tableBody.innerHTML = '';
+
+    applications.forEach(app => {
+        const row = document.createElement('tr');
+        
+        // Add status-based styling
+        row.classList.add(`status-${app.status.toLowerCase()}`);
+        
+        row.innerHTML = `
+            <td>${app.id}</td>
+            <td>${app.leaveType}</td>
+            <td>${app.startDate}</td>
+            <td>${app.endDate}</td>
+            <td>${app.days}</td>
+            <td>${app.reason}</td>
+            <td>
+                <span class="status-badge ${app.status.toLowerCase()}">
+                    ${app.status}
+                </span>
+            </td>
+        `;
+        
+        tableBody.appendChild(row);
+    });
+}
 function displayLeaveData(data) {
     // Defensive checks for data object itself
     if (!data) {
