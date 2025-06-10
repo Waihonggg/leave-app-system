@@ -89,12 +89,47 @@ function setupFormHandlers() {
         }
     }
     
+    // Validate dates on change
+    function validateDates() {
+        if (startDateInput.value) {
+            const startDate = new Date(startDateInput.value);
+            const startDay = startDate.getDay();
+            
+            if (startDay === 0 || startDay === 6) {
+                showMessage('Start date cannot be on a weekend. Please select a weekday.', 'error');
+                startDateInput.value = '';
+                daysInput.value = '';
+                return false;
+            }
+        }
+        
+        if (endDateInput.value) {
+            const endDate = new Date(endDateInput.value);
+            const endDay = endDate.getDay();
+            
+            if (endDay === 0 || endDay === 6) {
+                showMessage('End date cannot be on a weekend. Please select a weekday.', 'error');
+                endDateInput.value = '';
+                daysInput.value = '';
+                return false;
+            }
+        }
+        
+        return true;
+    }
+    
     startDateInput.addEventListener('change', () => {
-        endDateInput.min = startDateInput.value;
-        calculateDays();
+        if (validateDates()) {
+            endDateInput.min = startDateInput.value;
+            calculateDays();
+        }
     });
     
-    endDateInput.addEventListener('change', calculateDays);
+    endDateInput.addEventListener('change', () => {
+        if (validateDates()) {
+            calculateDays();
+        }
+    });
     
     // Show/hide MC balance based on leave type
     leaveTypeSelect.addEventListener('change', () => {
@@ -115,12 +150,17 @@ function setupFormHandlers() {
             return;
         }
 
-        // Check for weekends
+        // Final weekend validation before submission
         const startDate = new Date(startDateInput.value);
         const endDate = new Date(endDateInput.value);
-        if (startDate.getDay() === 0 || startDate.getDay() === 6 || 
-            endDate.getDay() === 0 || endDate.getDay() === 6) {
-            showMessage('Cannot apply leave for weekends. Please select workdays only.', 'error');
+        
+        if (startDate.getDay() === 0 || startDate.getDay() === 6) {
+            showMessage('Cannot apply leave starting on a weekend. Please select a weekday.', 'error');
+            return;
+        }
+        
+        if (endDate.getDay() === 0 || endDate.getDay() === 6) {
+            showMessage('Cannot apply leave ending on a weekend. Please select a weekday.', 'error');
             return;
         }
         
@@ -131,6 +171,11 @@ function setupFormHandlers() {
             reason: document.getElementById('reason').value,
             days: parseFloat(daysInput.value)
         };
+        
+        // Disable submit button to prevent double submission
+        const submitButton = leaveForm.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        submitButton.textContent = 'Submitting...';
         
         try {
             const response = await fetch('/api/apply-leave', {
@@ -144,16 +189,20 @@ function setupFormHandlers() {
             const result = await response.json();
             
             if (result.success) {
-                showMessage('Leave application submitted successfully! Status: Pending approval', 'success');
+                showMessage('Leave application submitted successfully! Status: Pending approval. An email has been sent to your manager.', 'success');
                 setTimeout(() => {
                     window.location.href = 'dashboard.html';
                 }, 2000);
             } else {
                 showMessage(result.message || 'Failed to submit leave application', 'error');
+                submitButton.disabled = false;
+                submitButton.textContent = 'Submit Application';
             }
         } catch (error) {
             showMessage('An error occurred. Please try again.', 'error');
             console.error('Submit error:', error);
+            submitButton.disabled = false;
+            submitButton.textContent = 'Submit Application';
         }
     });
 }
