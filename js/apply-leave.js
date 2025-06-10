@@ -59,15 +59,31 @@ function setupFormHandlers() {
     startDateInput.min = today;
     endDateInput.min = today;
     
-    // Calculate days when dates change
+    // Calculate days and check for weekends
     function calculateDays() {
         const startDate = new Date(startDateInput.value);
         const endDate = new Date(endDateInput.value);
         
         if (startDate && endDate && endDate >= startDate) {
-            const diffTime = Math.abs(endDate - startDate);
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-            daysInput.value = diffDays;
+            let totalDays = 0;
+            const currentDate = new Date(startDate);
+            
+            while (currentDate <= endDate) {
+                // Check if it's not a weekend (0 = Sunday, 6 = Saturday)
+                const dayOfWeek = currentDate.getDay();
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                    totalDays++;
+                }
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+            
+            if (totalDays === 0) {
+                showMessage('Selected dates fall entirely on weekends. Please select workdays.', 'error');
+                daysInput.value = '';
+                return;
+            }
+            
+            daysInput.value = totalDays;
         } else {
             daysInput.value = '';
         }
@@ -94,6 +110,20 @@ function setupFormHandlers() {
     leaveForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         
+        if (!startDateInput.value || !endDateInput.value) {
+            showMessage('Please select valid dates', 'error');
+            return;
+        }
+
+        // Check for weekends
+        const startDate = new Date(startDateInput.value);
+        const endDate = new Date(endDateInput.value);
+        if (startDate.getDay() === 0 || startDate.getDay() === 6 || 
+            endDate.getDay() === 0 || endDate.getDay() === 6) {
+            showMessage('Cannot apply leave for weekends. Please select workdays only.', 'error');
+            return;
+        }
+        
         const formData = {
             leaveType: leaveTypeSelect.value,
             startDate: startDateInput.value,
@@ -101,17 +131,6 @@ function setupFormHandlers() {
             reason: document.getElementById('reason').value,
             days: parseFloat(daysInput.value)
         };
-        
-        // Validate leave balance
-        if (formData.leaveType !== 'MC' && formData.days > currentLeaveData.leaveBalance) {
-            showMessage('Insufficient leave balance!', 'error');
-            return;
-        }
-        
-        if (formData.leaveType === 'MC' && formData.days > currentLeaveData.mcBalance) {
-            showMessage('Insufficient MC balance!', 'error');
-            return;
-        }
         
         try {
             const response = await fetch('/api/apply-leave', {
@@ -125,7 +144,7 @@ function setupFormHandlers() {
             const result = await response.json();
             
             if (result.success) {
-                showMessage('Leave application submitted successfully!', 'success');
+                showMessage('Leave application submitted successfully! Status: Pending approval', 'success');
                 setTimeout(() => {
                     window.location.href = 'dashboard.html';
                 }, 2000);
