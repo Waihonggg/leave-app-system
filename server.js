@@ -361,7 +361,6 @@ app.get('/api/leave-data', requireLogin, async (req, res) => {
     }
 });
 
-// Apply leave endpoint
 app.post('/api/apply-leave', requireLogin, async (req, res) => {
     console.log('--- /api/apply-leave endpoint CALLED ---');
     console.log('Session user:', JSON.stringify(req.session.user));
@@ -369,126 +368,218 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
 
     const { leaveType, startDate, endDate, reason, days } = req.body;
     const username = req.session.user.username;
-    const userRowIndexInLeaveDataSheet = req.session.user.rowIndex; // 1-based
+    const userRowIndexInLeaveDataSheet = req.session.user.rowIndex;
 
     if (!leaveType || !startDate || !endDate || !days) {
         console.error('/api/apply-leave: Validation failed - Missing required fields.');
         return res.status(400).json({ success: false, message: 'Missing required fields for leave application.' });
     }
-    const numDays = parseInt(days);
+
+    const numDays = parseFloat(days);
     if (isNaN(numDays) || numDays <= 0) {
         console.error('/api/apply-leave: Validation failed - Invalid number of days.');
         return res.status(400).json({ success: false, message: 'Invalid number of days (must be > 0).' });
     }
 
-    // Basic Weekend Check (can be expanded)
+    // Weekend validation
     const startDt = new Date(startDate);
     const endDt = new Date(endDate);
-    // Note: getUTCDay() is good if dates are consistently UTC. If local, use getDay().
-    // For simplicity, assuming dates are handled as local time by user input.
-    const startDay = startDt.getDay(); // 0 = Sunday, 6 = Saturday
-    const endDay = endDt.getDay();
-
-    if (numDays === 1 && (startDay === 0 || startDay === 6)) {
-        console.warn('/api/apply-leave: Single day application on a weekend.');
-        return res.status(400).json({ success: false, message: 'Single day leave cannot be on a weekend.' });
+    if (startDt.getDay() === 0 || startDt.getDay() === 6 || 
+        endDt.getDay() === 0 || endDt.getDay() === 6) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Cannot apply leave for weekends. Please select workdays only.' 
+        });
     }
-    // Add more complex logic for multi-day leaves spanning weekends if needed
 
     try {
-        console.log('/api/apply-leave: Attempting to get next ID from LEAVE_APPLICATION_SHEET...');
-        const idResponse = await sheets.spreadsheets.values.get({
-            spreadsheetId: SPREADSHEET_ID, range: `${LEAVE_APPLICATION_SHEET}!A:A`,
-        });
+        // Get next application ID
         let nextId = 1;
-        if (idResponse.data.values && idResponse.data.values.length > 1) { // Header + data
-            const ids = idResponse.data.values.slice(1).map(row => parseInt(row[0])).filter(id => !isNaN(id));
+        const existingApplications = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${LEAVE_APPLICATION_SHEET}!A:A`
+        });
+
+        if (existingApplications.data.values) {
+            const ids = existingApplications.data.values
+                .slice(1)
+                .map(row => parseInt(row[0]))
+                .filter(id => !isNaN(id));
             if (ids.length > 0) nextId = Math.max(0, ...ids) + 1;
         }
-        console.log(`/api/apply-leave: Next application ID determined: ${nextId}`);
 
+        // Add to Leave Application sheet with Pending status
         const leaveApplicationRowData = [
-            nextId.toString(), username, leaveType, startDate, endDate, reason || '', 'Pending'
+            nextId.toString(),
+            username,
+            leaveType,
+            startDate,
+            endDate,
+            reason || '',
+            'Pending'  // Initial status is always Pending
         ];
 
-        console.log('/api/apply-leave: Attempting to append to LEAVE_APPLICATION_SHEET:', JSON.stringify(leaveApplicationRowData));
         const appendResponse = await sheets.spreadsheets.values.append({
-            spreadsheetId: SPREADSHEET_ID, range: `${LEAVE_APPLICATION_SHEET}!A:G`,
-            valueInputOption: 'USER_ENTERED', insertDataOption: 'INSERT_ROWS',
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${LEAVE_APPLICATION_SHEET}!A:G`,
+            valueInputOption: 'USER_ENTERED',
+            insertDataOption: 'INSERT_ROWS',
             requestBody: { values: [leaveApplicationRowData] }
         });
-        console.log('/api/apply-leave: Append to sheet successful.');
+
         const newApplicationRowNumberInSheet = parseInt(appendResponse.data.updates.updatedRange.split('!A')[1].split(':')[0]);
 
-
-        // Update Leave Balance in 'Leave Data' sheet (Columns AG: Leave Taken, AH: Leave Balance)
-        // Indices from your sheet: 32: Leave Taken, 33: Leave Balance, 7: Total 2025 (Entitlement)
-        const balanceUpdateRange = `${SHEET_NAME}!AG${userRowIndexInLeaveDataSheet}:AH${userRowIndexInLeaveDataSheet}`; // AG=Taken, AH=Balance
-        const entitlementCell = `${SHEET_NAME}!H${userRowIndexInLeaveDataSheet}`; // H = Total Entitlement
-        
-        console.log(`/api/apply-leave: Updating balance. Fetching current taken from AG${userRowIndexInLeaveDataSheet} and entitlement from H${userRowIndexInLeaveDataSheet}`);
-        
-        const sheetValues = await sheets.spreadsheets.values.batchGet({
-            spreadsheetId: SPREADSHEET_ID,
-            ranges: [
-                `${SHEET_NAME}!AG${userRowIndexInLeaveDataSheet}`, // Current Leave Taken
-                entitlementCell                               // Total Entitlement
-            ]
-        });
-
-        let currentTaken = 0;
-        if (sheetValues.data.valueRanges[0] && sheetValues.data.valueRanges[0].values) {
-            currentTaken = parseInt(sheetValues.data.valueRanges[0].values[0][0]) || 0;
-        }
-        let totalEntitlement = 0;
-        if (sheetValues.data.valueRanges[1] && sheetValues.data.valueRanges[1].values) {
-            totalEntitlement = parseInt(sheetValues.data.valueRanges[1].values[0][0]) || 0;
-        }
-        console.log(`/api/apply-leave: Current Taken: ${currentTaken}, Total Entitlement: ${totalEntitlement}`);
-
-        const newTotalTaken = currentTaken + numDays;
-        const newBalance = totalEntitlement - newTotalTaken;
-        console.log(`/api/apply-leave: New Total Taken: ${newTotalTaken}, New Balance: ${newBalance}`);
-
-        await sheets.spreadsheets.values.update({
-            spreadsheetId: SPREADSHEET_ID, range: balanceUpdateRange,
-            valueInputOption: 'USER_ENTERED',
-            requestBody: { values: [[newTotalTaken, newBalance]] }
-        });
-        console.log(`/api/apply-leave: Leave balance updated in sheet for ${username}.`);
-
-
+        // Send email notification to manager
         if (transporter) {
-            console.log('/api/apply-leave: Attempting to get manager email...');
             const managerEmailAddress = await getManagerEmail(username);
             if (managerEmailAddress) {
-                console.log(`/api/apply-leave: Manager email found: ${managerEmailAddress}. Sending email...`);
                 const mailOptions = {
-                    from: process.env.EMAIL_USER, to: managerEmailAddress,
+                    from: process.env.EMAIL_USER,
+                    to: managerEmailAddress,
                     subject: `New Leave Application for Approval - ${username} (ID: ${nextId})`,
-                    html: `<p>A new leave application (ID: ${nextId}) has been submitted by ${username} and requires your approval.</p>
-                           <p><strong>Leave Type:</strong> ${leaveType}</p>
-                           <p><strong>Dates:</strong> ${startDate} to ${endDate} (${numDays} day(s))</p>
-                           <p><strong>Reason:</strong> ${reason || 'N/A'}</p>
-                           <hr>
-                           <p>To approve or reject this application, please visit the dashboard or use the links below (if configured):</p>
-                           <p>Application Row in Sheet (for reference): ${newApplicationRowNumberInSheet}</p>
-                           <p><i>(Approval links via email can be added here if direct approval/rejection endpoints are robustly secured)</i></p>`
+                    html: `
+                        <p>A new leave application (ID: ${nextId}) has been submitted by ${username} and requires your approval.</p>
+                        <p><strong>Leave Type:</strong> ${leaveType}</p>
+                        <p><strong>Dates:</strong> ${startDate} to ${endDate} (${numDays} day(s))</p>
+                        <p><strong>Reason:</strong> ${reason || 'N/A'}</p>
+                        <hr>
+                        <p>To approve or reject this application, please visit the dashboard.</p>
+                        <p>Application ID: ${nextId}</p>
+                    `
                 };
                 await transporter.sendMail(mailOptions);
-                console.log('/api/apply-leave: Email sent to manager successfully.');
-            } else {
-                console.warn(`/api/apply-leave: Manager email not found for user ${username}. Cannot send notification email.`);
             }
-        } else {
-             console.warn('/api/apply-leave: Nodemailer not configured. Skipping email notification.');
         }
 
-        res.json({ success: true, message: 'Leave application submitted successfully.', applicationId: nextId.toString() });
+        res.json({ 
+            success: true, 
+            message: 'Leave application submitted successfully. Pending manager approval.', 
+            applicationId: nextId.toString() 
+        });
 
     } catch (error) {
         console.error('--- ERROR in /api/apply-leave ---:', error.message, error.stack);
-        res.status(500).json({ success: false, message: `Server error submitting leave: ${error.message}` });
+        res.status(500).json({ 
+            success: false, 
+            message: `Server error submitting leave: ${error.message}` 
+        });
+    }
+});
+
+// Approve/Reject leave application
+app.post('/api/:action(approve|reject)-leave', requireLogin, async (req, res) => {
+    const action = req.params.action;
+    const { row: applicationRowInSheet, id: applicationID } = req.query;
+
+    if (!applicationRowInSheet || isNaN(parseInt(applicationRowInSheet)) || !applicationID) {
+        return res.status(400).send('Valid application row number and ID are required.');
+    }
+
+    const statusToSet = action === 'approve' ? 'Approved' : 'Rejected';
+    const statusColumn = 'G';
+
+    try {
+        // Get application details
+        const appDetailsRange = `${LEAVE_APPLICATION_SHEET}!A${applicationRowInSheet}:G${applicationRowInSheet}`;
+        const appDetailsResponse = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: appDetailsRange,
+        });
+
+        if (!appDetailsResponse.data.values || !appDetailsResponse.data.values[0]) {
+            return res.status(404).send(`Application not found at row ${applicationRowInSheet}.`);
+        }
+
+        const [
+            retrievedAppID, 
+            applicantUsername, 
+            leaveType, 
+            startDate, 
+            endDate, 
+            reasonText, 
+            currentStatus
+        ] = appDetailsResponse.data.values[0];
+
+        if (retrievedAppID !== applicationID) {
+            return res.status(400).send(`Application ID mismatch for row ${applicationRowInSheet}.`);
+        }
+
+        if (currentStatus === statusToSet) {
+            return res.send(`Application ID ${applicationID} is already ${statusToSet}.`);
+        }
+
+        // Update application status
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${LEAVE_APPLICATION_SHEET}!${statusColumn}${applicationRowInSheet}`,
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: [[statusToSet]] }
+        });
+
+        // If approved, update leave balance
+        if (action === 'approve') {
+            // Get user's row in Leave Data sheet
+            const userDataResponse = await sheets.spreadsheets.values.get({
+                spreadsheetId: SPREADSHEET_ID,
+                range: `${LEAVE_DATA_SHEET}!A:AJ`,
+            });
+
+            const userRowIndex = userDataResponse.data.values.findIndex(row => row[0] === applicantUsername);
+            if (userRowIndex === -1) {
+                throw new Error(`User ${applicantUsername} not found in Leave Data sheet`);
+            }
+
+            // Calculate leave days
+            const startDt = new Date(startDate);
+            const endDt = new Date(endDate);
+            let leaveDays = 0;
+            const currentDate = new Date(startDt);
+            
+            while (currentDate <= endDt) {
+                if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
+                    leaveDays++;
+                }
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+
+            // Update monthly usage and balance
+            const monthIndex = startDt.getMonth();
+            const monthColumn = String.fromCharCode(65 + monthIndex); // A = January, B = February, etc.
+            
+            // Update leave balance
+            await sheets.spreadsheets.values.update({
+                spreadsheetId: SPREADSHEET_ID,
+                range: `${LEAVE_DATA_SHEET}!${monthColumn}${userRowIndex + 1}`,
+                valueInputOption: 'USER_ENTERED',
+                requestBody: { 
+                    values: [[leaveDays]] 
+                }
+            });
+        }
+
+        // Send email notification to applicant
+        if (transporter && applicantUsername) {
+            const applicantEmail = await getApplicantEmail(applicantUsername);
+            if (applicantEmail) {
+                const mailOptions = {
+                    from: process.env.EMAIL_USER,
+                    to: applicantEmail,
+                    subject: `Leave Application ${statusToSet} (ID: ${applicationID})`,
+                    html: `
+                        <p>Your leave application (ID: ${applicationID}) has been <strong>${statusToSet.toLowerCase()}</strong>.</p>
+                        <p>Details: ${leaveType || 'N/A'}, ${startDate || 'N/A'} to ${endDate || 'N/A'}</p>
+                        <p>Reason: ${reasonText || 'N/A'}</p>
+                    `
+                };
+                await transporter.sendMail(mailOptions);
+            }
+        }
+
+        res.send(`Leave application ID ${applicationID} has been ${statusToSet.toLowerCase()}.`);
+
+    } catch (error) {
+        console.error(`Error in /api/${action}-leave:`, error);
+        res.status(500).send(`Error ${action}ing leave: ${error.message}`);
     }
 });
 
