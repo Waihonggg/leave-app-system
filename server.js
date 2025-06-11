@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const session = require('express-session');
+const FileStore = require('session-file-store')(session);
 const { google } = require('googleapis');
 const path = require('path');
 const fs = require('fs');
@@ -32,13 +33,24 @@ let sessionConfig = {
     }
 };
 
+// Use FileStore in production to avoid memory leaks
 if (process.env.NODE_ENV === 'production') {
-    console.log("Production environment detected. Setting secure session cookies.");
+    console.log("Production environment detected. Setting secure session cookies and file store.");
+    sessionConfig.store = new FileStore({
+        path: './sessions',
+        ttl: 86400, // 24 hours
+        retries: 1
+    });
     sessionConfig.cookie.secure = true;
     sessionConfig.cookie.sameSite = 'lax';
 } else {
-    console.log("Development environment detected. Session cookies will not be 'secure'.");
+    console.log("Development environment detected. Using memory store for sessions.");
 }
+
+app.use(session(sessionConfig));
+
+// Rest of your server.js code remains the same...
+// (Copy everything else from the previous server.js starting from "// Google Sheets Setup")
 app.use(session(sessionConfig));
 
 // Google Sheets Setup
