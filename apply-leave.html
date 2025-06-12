@@ -5,67 +5,300 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Apply for Leave</title>
     <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
     <nav class="navbar">
         <div class="nav-container">
-            <h1>Leave Application System</h1>
+            <div class="nav-brand">
+                <i class="fas fa-calendar-alt"></i>
+                <h1>Leave Management System</h1>
+            </div>
             <div class="nav-links">
-                <a href="dashboard.html">Dashboard</a>
-                <a href="apply-leave.html" class="active">Apply Leave</a>
-                <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+                <a href="dashboard.html">
+                    <i class="fas fa-home"></i> Dashboard
+                </a>
+                <a href="apply-leave.html" class="active">
+                    <i class="fas fa-plus-circle"></i> Apply Leave
+                </a>
+                <button id="logoutBtn" class="btn btn-secondary">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
             </div>
         </div>
     </nav>
 
     <div class="container">
-        <div class="card">
-            <h2>Apply for Leave</h2>
-            <form id="leaveForm">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="leaveType">Leave Type</label>
-                        <select id="leaveType" name="leaveType" required>
-                            <option value="">Select Leave Type</option>
-                            <option value="AL">Annual Leave</option>
-                            <option value="CCL">Compassionate/Care Leave</option>
-                            <option value="MC">Medical Certificate</option>
-                        </select>
-                    </div>
+        <div class="card apply-leave-card">
+            <div class="card-header">
+                <h2><i class="fas fa-file-medical"></i> Apply for Leave</h2>
+            </div>
+            <form id="leaveForm" class="leave-form">
+                <div class="form-section">
+                    <h3>Leave Details</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="leaveType">
+                                <i class="fas fa-tag"></i> Leave Type
+                            </label>
+                            <select id="leaveType" name="leaveType" required>
+                                <option value="">Select Leave Type</option>
+                                <option value="AL">Annual Leave (AL)</option>
+                                <option value="CCL">Compassionate/Care Leave (CCL)</option>
+                                <option value="MC">Medical Certificate (MC)</option>
+                                <option value="WFH">Work From Home (WFH)</option>
+                            </select>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="startDate">Start Date</label>
-                        <input type="date" id="startDate" name="startDate" required>
-                    </div>
+                        <div class="form-group">
+                            <label for="startDate">
+                                <i class="fas fa-calendar-day"></i> Start Date
+                            </label>
+                            <input type="date" id="startDate" name="startDate" required>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="endDate">End Date</label>
-                        <input type="date" id="endDate" name="endDate" required>
-                    </div>
+                        <div class="form-group">
+                            <label for="endDate">
+                                <i class="fas fa-calendar-check"></i> End Date
+                            </label>
+                            <input type="date" id="endDate" name="endDate" required>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="days">Number of Days</label>
-                        <input type="number" id="days" name="days" min="0.5" step="0.5" readonly>
+                        <div class="form-group">
+                            <label for="days">
+                                <i class="fas fa-calculator"></i> Number of Days
+                            </label>
+                            <input type="number" id="days" name="days" min="0.5" step="0.5" readonly>
+                        </div>
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="reason">Reason for Leave</label>
-                    <textarea id="reason" name="reason" rows="4" required></textarea>
+                <div class="form-section">
+                    <h3>Additional Information</h3>
+                    <div class="form-group">
+                        <label for="reason">
+                            <i class="fas fa-comment-alt"></i> Reason for Leave
+                        </label>
+                        <textarea id="reason" name="reason" rows="4" placeholder="Please provide a reason for your leave application..."></textarea>
+                    </div>
                 </div>
 
-                <div class="balance-info">
-                    <p>Current Leave Balance: <span id="currentBalance" class="balance">0</span> days</p>
-                    <p id="mcBalanceInfo" style="display:none;">Current MC Balance: <span id="currentMCBalance" class="balance">0</span> days</p>
+                <div class="balance-info-card">
+                    <div class="balance-info-item">
+                        <i class="fas fa-info-circle"></i>
+                        <span>Current Leave Balance:</span>
+                        <strong id="currentBalance" class="balance">0</strong>
+                        <span>days</span>
+                    </div>
+                    <div class="balance-info-item" id="mcBalanceInfo" style="display:none;">
+                        <i class="fas fa-briefcase-medical"></i>
+                        <span>Current MC Balance:</span>
+                        <strong id="currentMCBalance" class="balance">0</strong>
+                        <span>days</span>
+                    </div>
                 </div>
 
                 <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">Submit Application</button>
-                    <a href="dashboard.html" class="btn btn-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-paper-plane"></i> Submit Application
+                    </button>
+                    <a href="dashboard.html" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Cancel
+                    </a>
                 </div>
             </form>
 
             <div id="message" class="message"></div>
+        </div>
+
+        <!-- Leave Guidelines -->
+        <div class="card guidelines-card">
+            <div class="card-header">
+                <h3><i class="fas fa-info-circle"></i> Leave Guidelines</h3>
+            </div>
+            <div class="guidelines-content">
+                <div class="guideline-item">
+                    <i class="fas fa-umbrella-beach"></i>
+                    <div>
+                        <h4>Annual Leave (AL)</h4>
+                        <p>Regular vacation days for personal time off.</p>
+                    </div>
+                </div>
+                <div class="guideline-item">
+                    <i class="fas fa-heart"></i>
+                    <div>
+                        <h4>Compassionate Leave (CCL)</h4>
+                        <p>For family emergencies or bereavement.</p>
+                    </div>
+                </div>
+                <div class="guideline-item">
+                    <i class="fas fa-briefcase-medical"></i>
+                    <div>
+                        <h4>Medical Leave (MC)</h4>
+                        <p>Sick leave with medical certificate required.</p>
+                    </div>
+                </div>
+                <div class="guideline-item">
+                    <i class="fas fa-home"></i>
+                    <div>
+                        <h4>Work From Home (WFH)</h4>
+                        <p>Remote work arrangement for specific days.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/apply-leave.js"></script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apply for Leave</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <i class="fas fa-calendar-alt"></i>
+                <h1>Leave Management System</h1>
+            </div>
+            <div class="nav-links">
+                <a href="dashboard.html">
+                    <i class="fas fa-home"></i> Dashboard
+                </a>
+                <a href="apply-leave.html" class="active">
+                    <i class="fas fa-plus-circle"></i> Apply Leave
+                </a>
+                <button id="logoutBtn" class="btn btn-secondary">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="card apply-leave-card">
+            <div class="card-header">
+                <h2><i class="fas fa-file-medical"></i> Apply for Leave</h2>
+            </div>
+            <form id="leaveForm" class="leave-form">
+                <div class="form-section">
+                    <h3>Leave Details</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="leaveType">
+                                <i class="fas fa-tag"></i> Leave Type
+                            </label>
+                            <select id="leaveType" name="leaveType" required>
+                                <option value="">Select Leave Type</option>
+                                <option value="AL">Annual Leave (AL)</option>
+                                <option value="CCL">Compassionate/Care Leave (CCL)</option>
+                                <option value="MC">Medical Certificate (MC)</option>
+                                <option value="WFH">Work From Home (WFH)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="startDate">
+                                <i class="fas fa-calendar-day"></i> Start Date
+                            </label>
+                            <input type="date" id="startDate" name="startDate" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="endDate">
+                                <i class="fas fa-calendar-check"></i> End Date
+                            </label>
+                            <input type="date" id="endDate" name="endDate" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="days">
+                                <i class="fas fa-calculator"></i> Number of Days
+                            </label>
+                            <input type="number" id="days" name="days" min="0.5" step="0.5" readonly>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>Additional Information</h3>
+                    <div class="form-group">
+                        <label for="reason">
+                            <i class="fas fa-comment-alt"></i> Reason for Leave
+                        </label>
+                        <textarea id="reason" name="reason" rows="4" placeholder="Please provide a reason for your leave application..."></textarea>
+                    </div>
+                </div>
+
+                <div class="balance-info-card">
+                    <div class="balance-info-item">
+                        <i class="fas fa-info-circle"></i>
+                        <span>Current Leave Balance:</span>
+                        <strong id="currentBalance" class="balance">0</strong>
+                        <span>days</span>
+                    </div>
+                    <div class="balance-info-item" id="mcBalanceInfo" style="display:none;">
+                        <i class="fas fa-briefcase-medical"></i>
+                        <span>Current MC Balance:</span>
+                        <strong id="currentMCBalance" class="balance">0</strong>
+                        <span>days</span>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-paper-plane"></i> Submit Application
+                    </button>
+                    <a href="dashboard.html" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Cancel
+                    </a>
+                </div>
+            </form>
+
+            <div id="message" class="message"></div>
+        </div>
+
+        <!-- Leave Guidelines -->
+        <div class="card guidelines-card">
+            <div class="card-header">
+                <h3><i class="fas fa-info-circle"></i> Leave Guidelines</h3>
+            </div>
+            <div class="guidelines-content">
+                <div class="guideline-item">
+                    <i class="fas fa-umbrella-beach"></i>
+                    <div>
+                        <h4>Annual Leave (AL)</h4>
+                        <p>Regular vacation days for personal time off.</p>
+                    </div>
+                </div>
+                <div class="guideline-item">
+                    <i class="fas fa-heart"></i>
+                    <div>
+                        <h4>Compassionate Leave (CCL)</h4>
+                        <p>For family emergencies or bereavement.</p>
+                    </div>
+                </div>
+                <div class="guideline-item">
+                    <i class="fas fa-briefcase-medical"></i>
+                    <div>
+                        <h4>Medical Leave (MC)</h4>
+                        <p>Sick leave with medical certificate required.</p>
+                    </div>
+                </div>
+                <div class="guideline-item">
+                    <i class="fas fa-home"></i>
+                    <div>
+                        <h4>Work From Home (WFH)</h4>
+                        <p>Remote work arrangement for specific days.</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
