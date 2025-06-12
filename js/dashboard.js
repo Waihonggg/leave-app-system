@@ -102,6 +102,7 @@ function displayLeaveData(data) {
     document.getElementById('leaveBalance').textContent = data.leaveBalance !== undefined ? data.leaveBalance : '0';
     document.getElementById('leaveTaken').textContent = data.leaveTaken !== undefined ? data.leaveTaken : '0';
     document.getElementById('mcBalance').textContent = data.mcBalance !== undefined ? data.mcBalance : '0';
+    document.getElementById('mcTaken').textContent = data.mcTaken !== undefined ? data.mcTaken : '0';
 
     // Update balance overview
     document.getElementById('totalLeave').textContent = data.totalLeave !== undefined ? data.totalLeave : 'N/A';
@@ -118,36 +119,52 @@ function displayLeaveData(data) {
     if (data.applications && Array.isArray(data.applications)) {
         updateLeaveApplicationsTable(data.applications);
     }
+    
+    // Update monthly table
+    if (data.monthlyData) {
+        updateMonthlyTable(data.monthlyData);
+    }
 }
-// Add this function to your existing dashboard.js to handle MC Taken
-function displayLeaveData(data) {
-    if (!data) {
-        console.error("displayLeaveData called with undefined or null data.");
+
+function updateMonthlyTable(monthlyData) {
+    const tableBody = document.getElementById('monthlyTableBody');
+    if (!tableBody) {
+        console.error("Element with ID 'monthlyTableBody' not found.");
         return;
     }
-
-    // Update quick stats
-    document.getElementById('leaveBalance').textContent = data.leaveBalance !== undefined ? data.leaveBalance : '0';
-    document.getElementById('leaveTaken').textContent = data.leaveTaken !== undefined ? data.leaveTaken : '0';
-    document.getElementById('mcBalance').textContent = data.mcBalance !== undefined ? data.mcBalance : '0';
-    document.getElementById('mcTaken').textContent = data.mcTaken !== undefined ? data.mcTaken : '0'; // Add this line
-
-    // Update balance overview
-    document.getElementById('totalLeave').textContent = data.totalLeave !== undefined ? data.totalLeave : 'N/A';
-    document.getElementById('leaveTakenDetail').textContent = data.leaveTaken !== undefined ? data.leaveTaken : 'N/A';
-    document.getElementById('leaveBalanceDetail').textContent = data.leaveBalance !== undefined ? data.leaveBalance : 'N/A';
     
-    // Update leave breakdown
-    document.getElementById('carryForward').textContent = data.carryForward !== undefined ? data.carryForward : 'N/A';
-    document.getElementById('annualLeave').textContent = data.annualLeave !== undefined ? data.annualLeave : 'N/A';
-    document.getElementById('compassionateLeave').textContent = data.compassionateLeave !== undefined ? data.compassionateLeave : 'N/A';
-    document.getElementById('wfhCount').textContent = data.wfhCount !== undefined ? data.wfhCount : 'N/A';
+    tableBody.innerHTML = '';
     
-    // Update leave applications table
-    if (data.applications && Array.isArray(data.applications)) {
-        updateLeaveApplicationsTable(data.applications);
-    }
+    // Define month order
+    const months = [
+        { key: 'Jan', name: 'January' },
+        { key: 'Feb', name: 'February' },
+        { key: 'March', name: 'March' },
+        { key: 'Apr', name: 'April' },
+        { key: 'May', name: 'May' },
+        { key: 'June', name: 'June' },
+        { key: 'July', name: 'July' },
+        { key: 'Aug', name: 'August' },
+        { key: 'Sept', name: 'September' },
+        { key: 'Oct', name: 'October' },
+        { key: 'Nov', name: 'November' },
+        { key: 'Dec', name: 'December' }
+    ];
+    
+    months.forEach(month => {
+        const row = document.createElement('tr');
+        const monthData = monthlyData[month.key] || { leave: 0, mc: 0 };
+        
+        row.innerHTML = `
+            <td>${month.name}</td>
+            <td>${monthData.leave || 0}</td>
+            <td>${monthData.mc || 0}</td>
+        `;
+        
+        tableBody.appendChild(row);
+    });
 }
+
 function createBalanceChart(data) {
     const ctx = document.getElementById('balanceChart');
     if (!ctx) return;
