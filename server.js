@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const session = require('express-session');
-const FileStore = require('session-file-store')(session);
 const { google } = require('googleapis');
 const path = require('path');
 const fs = require('fs');
@@ -33,24 +32,13 @@ let sessionConfig = {
     }
 };
 
-// Use FileStore in production to avoid memory leaks
 if (process.env.NODE_ENV === 'production') {
-    console.log("Production environment detected. Setting secure session cookies and file store.");
-    sessionConfig.store = new FileStore({
-        path: './sessions',
-        ttl: 86400, // 24 hours
-        retries: 1
-    });
+    console.log("Production environment detected. Setting secure session cookies.");
     sessionConfig.cookie.secure = true;
     sessionConfig.cookie.sameSite = 'lax';
 } else {
-    console.log("Development environment detected. Using memory store for sessions.");
+    console.log("Development environment detected. Session cookies will not be 'secure'.");
 }
-
-app.use(session(sessionConfig));
-
-// Rest of your server.js code remains the same...
-// (Copy everything else from the previous server.js starting from "// Google Sheets Setup")
 app.use(session(sessionConfig));
 
 // Google Sheets Setup
@@ -399,21 +387,44 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
         if (transporter) {
             const managerEmail = await getManagerEmail(username);
             if (managerEmail) {
+                // Get the row number of the newly added application
+                const newApplicationRowNumber = parseInt(appendResponse.data.updates.updatedRange.split('!A')[1].split(':')[0]);
+                
+                // Get the base URL for the application
+                const baseUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+                
                 const managerMailOptions = {
                     from: process.env.EMAIL_USER,
                     to: managerEmail,
                     subject: `Leave Application - ${username} (ID: ${nextId})`,
                     html: `
-                        <h3>New Leave Application</h3>
-                        <p><strong>Employee:</strong> ${username}</p>
-                        <p><strong>Leave Type:</strong> ${leaveType}</p>
-                        <p><strong>Start Date:</strong> ${startDate}</p>
-                        <p><strong>End Date:</strong> ${endDate}</p>
-                        <p><strong>Number of Days:</strong> ${days}</p>
-                        <p><strong>Reason:</strong> ${reason || 'No reason provided'}</p>
-                        <p><strong>Status:</strong> Pending</p>
-                        <br>
-                        <p>Please review and approve/reject this application.</p>
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                            <h3 style="color: #333;">New Leave Application</h3>
+                            <div style="background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin: 20px 0;">
+                                <p><strong>Employee:</strong> ${username}</p>
+                                <p><strong>Leave Type:</strong> ${leaveType}</p>
+                                <p><strong>Start Date:</strong> ${startDate}</p>
+                                <p><strong>End Date:</strong> ${endDate}</p>
+                                <p><strong>Number of Days:</strong> ${days}</p>
+                                <p><strong>Reason:</strong> ${reason || 'No reason provided'}</p>
+                                <p><strong>Status:</strong> <span style="color: #ff9800; font-weight: bold;">Pending</span></p>
+                            </div>
+                            
+                            <div style="margin: 30px 0; text-align: center;">
+                                <a href="${baseUrl}/api/approve-leave?row=${newApplicationRowNumber}&id=${nextId}" 
+                                   style="display: inline-block; padding: 12px 30px; margin: 0 10px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                                    APPROVE
+                                </a>
+                                <a href="${baseUrl}/api/reject-leave?row=${newApplicationRowNumber}&id=${nextId}" 
+                                   style="display: inline-block; padding: 12px 30px; margin: 0 10px; background-color: #f44336; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                                    REJECT
+                                </a>
+                            </div>
+                            
+                            <p style="color: #666; font-size: 12px; margin-top: 30px;">
+                                <em>Note: You may need to be logged in to the Leave Application System to approve/reject this request.</em>
+                            </p>
+                        </div>
                     `
                 };
                 
@@ -441,13 +452,21 @@ app.post('/api/apply-leave', requireLogin, async (req, res) => {
     }
 });
 
-// Approve/Reject leave application - FIXED VERSION
-app.post('/api/:action(approve|reject)-leave', requireLogin, async (req, res) => {
+// Approve/Reject leave application - Updated to handle GET requests from email
+app.get('/api/:action(approve|reject)-leave', requireLogin, async (req, res) => {
     const action = req.params.action;
     const { row: applicationRowInSheet, id: applicationID } = req.query;
 
     if (!applicationRowInSheet || isNaN(parseInt(applicationRowInSheet)) || !applicationID) {
-        return res.status(400).send('Valid application row number and ID are required.');
+        return res.status(400).send(`
+            <html>
+                <head><title>Error</title></head>
+                <body>
+                    <h3>Error: Valid application row number and ID are required.</h3>
+                    <p><a href="/dashboard.html">Go to Dashboard</a></p>
+                </body>
+            </html>
+        `);
     }
 
     const statusToSet = action === 'approve' ? 'Approved' : 'Rejected';
@@ -462,7 +481,15 @@ app.post('/api/:action(approve|reject)-leave', requireLogin, async (req, res) =>
         });
 
         if (!appDetailsResponse.data.values || !appDetailsResponse.data.values[0]) {
-            return res.status(404).send(`Application not found at row ${applicationRowInSheet}.`);
+            return res.status(404).send(`
+                <html>
+                    <head><title>Not Found</title></head>
+                    <body>
+                        <h3>Application not found at row ${applicationRowInSheet}.</h3>
+                        <p><a href="/dashboard.html">Go to Dashboard</a></p>
+                    </body>
+                </html>
+            `);
         }
 
         const [
@@ -477,11 +504,28 @@ app.post('/api/:action(approve|reject)-leave', requireLogin, async (req, res) =>
         ] = appDetailsResponse.data.values[0];
 
         if (retrievedAppID !== applicationID) {
-            return res.status(400).send(`Application ID mismatch for row ${applicationRowInSheet}.`);
+            return res.status(400).send(`
+                <html>
+                    <head><title>Error</title></head>
+                    <body>
+                        <h3>Application ID mismatch for row ${applicationRowInSheet}.</h3>
+                        <p><a href="/dashboard.html">Go to Dashboard</a></p>
+                    </body>
+                </html>
+            `);
         }
 
         if (currentStatus === statusToSet) {
-            return res.send(`Application ID ${applicationID} is already ${statusToSet}.`);
+            return res.send(`
+                <html>
+                    <head><title>Already Processed</title></head>
+                    <body>
+                        <h3>Application ID ${applicationID} is already ${statusToSet}.</h3>
+                        <p><a href="/dashboard.html">Go to Dashboard</a></p>
+                    </body>
+                </html>
+            `);
+        }
         }
 
         // Update application status
@@ -513,8 +557,6 @@ app.post('/api/:action(approve|reject)-leave', requireLogin, async (req, res) =>
             const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             
             // Column indices for monthly leave/MC data
-            // Jan Leave = Column I (index 8), Jan MC = Column J (index 9)
-            // Feb Leave = Column K (index 10), Feb MC = Column L (index 11), etc.
             let columnIndex;
             if (leaveType === 'MC') {
                 columnIndex = 9 + (monthIndex * 2); // MC columns
@@ -547,22 +589,68 @@ app.post('/api/:action(approve|reject)-leave', requireLogin, async (req, res) =>
                     to: applicantEmail,
                     subject: `Leave Application ${statusToSet} (ID: ${applicationID})`,
                     html: `
-                        <p>Your leave application (ID: ${applicationID}) has been <strong>${statusToSet.toLowerCase()}</strong>.</p>
-                        <p>Details: ${leaveType || 'N/A'}, ${startDate || 'N/A'} to ${endDate || 'N/A'}</p>
-                        <p>Number of days: ${daysStr || 'N/A'}</p>
-                        <p>Reason: ${reasonText || 'N/A'}</p>
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                            <h3 style="color: #333;">Leave Application ${statusToSet}</h3>
+                            <p>Your leave application (ID: ${applicationID}) has been <strong style="color: ${action === 'approve' ? '#4CAF50' : '#f44336'};">${statusToSet.toLowerCase()}</strong>.</p>
+                            <div style="background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin: 20px 0;">
+                                <p><strong>Leave Type:</strong> ${leaveType || 'N/A'}</p>
+                                <p><strong>Period:</strong> ${startDate || 'N/A'} to ${endDate || 'N/A'}</p>
+                                <p><strong>Number of days:</strong> ${daysStr || 'N/A'}</p>
+                                <p><strong>Reason:</strong> ${reasonText || 'N/A'}</p>
+                            </div>
+                        </div>
                     `
                 };
                 await transporter.sendMail(mailOptions);
             }
         }
 
-        res.send(`Leave application ID ${applicationID} has been ${statusToSet.toLowerCase()}.`);
+        // Return HTML response for browser
+        res.send(`
+            <html>
+                <head>
+                    <title>Leave ${statusToSet}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+                        .success { color: #4CAF50; }
+                        .rejected { color: #f44336; }
+                        .info { background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin: 20px 0; }
+                    </style>
+                </head>
+                <body>
+                    <h2 class="${action === 'approve' ? 'success' : 'rejected'}">Leave Application ${statusToSet}</h2>
+                    <div class="info">
+                        <p><strong>Application ID:</strong> ${applicationID}</p>
+                        <p><strong>Employee:</strong> ${applicantUsername}</p>
+                        <p><strong>Leave Type:</strong> ${leaveType}</p>
+                        <p><strong>Period:</strong> ${startDate} to ${endDate}</p>
+                        <p><strong>Days:</strong> ${daysStr}</p>
+                        <p><strong>Status:</strong> ${statusToSet}</p>
+                    </div>
+                    <p>An email notification has been sent to the applicant.</p>
+                    <p><a href="/dashboard.html">Go to Dashboard</a></p>
+                </body>
+            </html>
+        `);
 
     } catch (error) {
         console.error(`Error in /api/${action}-leave:`, error);
-        res.status(500).send(`Error ${action}ing leave: ${error.message}`);
+        res.status(500).send(`
+            <html>
+                <head><title>Error</title></head>
+                <body>
+                    <h3>Error ${action}ing leave: ${error.message}</h3>
+                    <p><a href="/dashboard.html">Go to Dashboard</a></p>
+                </body>
+            </html>
+        `);
     }
+});
+
+// Keep the POST endpoint for API compatibility
+app.post('/api/:action(approve|reject)-leave', requireLogin, async (req, res) => {
+    // Call the GET handler with the same logic
+    return app._router.handle(Object.assign(req, { method: 'GET' }), res);
 });
 
 // Logout
