@@ -261,28 +261,64 @@ app.get('/api/leave-data', requireLogin, async (req, res) => {
         const userData = userDataResponse.data.values[0];
         console.log(`Raw userData for ${username} (first 5 elements):`, userData.slice(0,5));
 
-        // Fetch all leave applications for the logged-in user
+        // Fetch all leave applications
         const leaveApplicationsResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
             range: `${LEAVE_APPLICATION_SHEET}!A:H`,
         });
         
         let userApplications = [];
+        let teamApplications = [];
+        let isManager = false;
+        
         if (leaveApplicationsResponse.data.values && leaveApplicationsResponse.data.values.length > 1) {
-            userApplications = leaveApplicationsResponse.data.values.slice(1)
-                .filter(row => row && row.length >= 2 && row[1] && row[1].trim().toLowerCase() === username.toLowerCase())
-                .map(app => ({
-                    id: app[0] || 'N/A',
-                    username: app[1] || 'N/A',
-                    leaveType: app[2] || 'N/A',
-                    startDate: app[3] || 'N/A',
-                    endDate: app[4] || 'N/A',
-                    days: app[5] || 'N/A',
-                    reason: app[6] || 'No reason provided',
-                    status: app[7] || 'Unknown'
-                }));
+            // Check if current user is a manager
+            const allUsers = await sheets.spreadsheets.values.get({
+                spreadsheetId: SPREADSHEET_ID,
+                range: `${SHEET_NAME}!A:D`,
+            });
+            
+            if (allUsers.data.values) {
+                // Check if any user has this person as their manager
+                isManager = allUsers.data.values.some(row => 
+                    row[3] && row[3].trim().toLowerCase() === username.toLowerCase()
+                );
+                
+                // Get list of employees under this manager
+                const managedEmployees = allUsers.data.values
+                    .filter(row => row[3] && row[3].trim().toLowerCase() === username.toLowerCase())
+                    .map(row => row[0].trim().toLowerCase());
+                
+                // Process applications
+                leaveApplicationsResponse.data.values.slice(1).forEach((app, index) => {
+                    const rowNumber = index + 2; // +2 because array is 0-based and we skip header
+                    const applicationData = {
+                        id: app[0] || 'N/A',
+                        username: app[1] || 'N/A',
+                        leaveType: app[2] || 'N/A',
+                        startDate: app[3] || 'N/A',
+                        endDate: app[4] || 'N/A',
+                        days: app[5] || 'N/A',
+                        reason: app[6] || 'No reason provided',
+                        status: app[7] || 'Unknown',
+                        rowNumber: rowNumber
+                    };
+                    
+                    // Add to user's own applications
+                    if (app[1] && app[1].trim().toLowerCase() === username.toLowerCase()) {
+                        userApplications.push(applicationData);
+                    }
+                    
+                    // Add to team applications if user is manager
+                    if (isManager && app[1] && managedEmployees.includes(app[1].trim().toLowerCase())) {
+                        teamApplications.push(applicationData);
+                    }
+                });
+            }
         }
+        
         console.log(`Found ${userApplications.length} applications for user ${username}`);
+        console.log(`User is manager: ${isManager}, Found ${teamApplications.length} team applications`);
         
         const monthlyDataPayload = {
             Jan:   { leave: parseInt(userData[8])  || 0, mc: parseInt(userData[9])  || 0 },
@@ -313,7 +349,9 @@ app.get('/api/leave-data', requireLogin, async (req, res) => {
                 mcTaken: parseInt(userData[34]) || 0,
                 mcBalance: parseInt(userData[35]) || 0,
                 wfhCount: parseInt(userData[36]) || 0,
-                applications: userApplications
+                applications: userApplications,
+                isManager: isManager,
+                teamApplications: teamApplications
             }
         };
         console.log(`Successfully prepared leave data payload for ${username}. Monthly Jan Leave: ${responsePayload.data.monthlyData.Jan.leave}`);
@@ -650,6 +688,77 @@ app.get('/api/:action(approve|reject)-leave', requireLogin, async (req, res) => 
 app.post('/api/:action(approve|reject)-leave', requireLogin, async (req, res) => {
     // Call the GET handler with the same logic
     return app._router.handle(Object.assign(req, { method: 'GET' }), res);
+});
+
+// Cancel leave application endpoint
+app.post('/api/cancel-leave', requireLogin, async (req, res) => {
+    const { applicationId, rowNumber } = req.body;
+    const username = req.session.user.username;
+    
+    console.log(`Cancel leave request: User ${username}, Application ID ${applicationId}, Row ${rowNumber}`);
+    
+    if (!applicationId || !rowNumber) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Application ID and row number are required' 
+        });
+    }
+    
+    try {
+        // Verify the application belongs to the user and is pending
+        const appDetailsRange = `${LEAVE_APPLICATION_SHEET}!A${rowNumber}:H${rowNumber}`;
+        const appDetailsResponse = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: appDetailsRange,
+        });
+        
+        if (!appDetailsResponse.data.values || !appDetailsResponse.data.values[0]) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Application not found' 
+            });
+        }
+        
+        const [appId, appUsername, , , , , , appStatus] = appDetailsResponse.data.values[0];
+        
+        // Verify ownership
+        if (appUsername.toLowerCase() !== username.toLowerCase()) {
+            return res.status(403).json({ 
+                success: false, 
+                message: 'You can only cancel your own applications' 
+            });
+        }
+        
+        // Verify it's pending
+        if (appStatus !== 'Pending') {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Only pending applications can be cancelled' 
+            });
+        }
+        
+        // Update status to Cancelled
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${LEAVE_APPLICATION_SHEET}!H${rowNumber}`,
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: [['Cancelled']] }
+        });
+        
+        console.log(`Application ${applicationId} cancelled successfully`);
+        
+        res.json({ 
+            success: true, 
+            message: 'Leave application cancelled successfully' 
+        });
+        
+    } catch (error) {
+        console.error('Error cancelling leave:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error cancelling leave application' 
+        });
+    }
 });
 
 // Logout
