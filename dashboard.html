@@ -3,144 +3,153 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Leave Dashboard</title>
+    <title>Leave Dashboard - Leave Application System</title>
     <link rel="stylesheet" href="css/styles.css">
+    <!-- Consider using a modern icon library if Font Awesome isn't a strict requirement, or ensure you're on the latest version -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Favicon (optional but good practice) -->
+    <!-- <link rel="icon" href="favicon.ico" type="image/x-icon"> -->
 </head>
 <body>
-    <nav class="navbar">
-        <div class="nav-container">
-            <h1>Leave Application System</h1>
-            <div class="nav-links">
-                <a href="dashboard.html" class="active">Dashboard</a>
-                <a href="apply-leave.html">Apply Leave</a>
-                <button id="logoutBtn" class="btn btn-secondary">Logout</button>
-            </div>
-        </div>
-    </nav>
-
-    <div class="container">
-        <div class="welcome-section">
-            <h2>Welcome, <span id="username"></span>!</h2>
-            <p>Current Date: <span id="currentDate"></span></p>
-        </div>
-
-        <div class="dashboard-grid">
-            <div class="card">
-                <h3>Leave Balance Overview</h3>
-                <div class="balance-grid">
-                    <div class="balance-item">
-                        <label>Total Leave Entitlement:</label>
-                        <span id="totalLeave" class="value">0</span>
-                    </div>
-                    <div class="balance-item">
-                        <label>Leave Taken:</label>
-                        <span id="leaveTaken" class="value">0</span>
-                    </div>
-                    <div class="balance-item">
-                        <label>Leave Balance:</label>
-                        <span id="leaveBalance" class="value balance">0</span>
-                    </div>
-                    <div class="balance-item">
-                        <label>MC Taken:</label>
-                        <span id="mcTaken" class="value">0</span>
-                    </div>
-                    <div class="balance-item">
-                        <label>MC Balance:</label>
-                        <span id="mcBalance" class="value balance">0</span>
-                    </div>
+    <div class="app-container">
+        <nav class="navbar">
+            <div class="nav-container">
+                <a href="dashboard.html" class="nav-logo">Leave App System</a>
+                <div class="nav-links">
+                    <a href="dashboard.html" class="nav-link active">
+                        <i class="fas fa-tachometer-alt"></i> Dashboard
+                    </a>
+                    <a href="apply-leave.html" class="nav-link">
+                        <i class="fas fa-paper-plane"></i> Apply Leave
+                    </a>
+                    <button id="logoutBtn" class="btn btn-secondary">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </button>
+                </div>
+                <div class="nav-user">
+                    <span id="usernameDisplay">Welcome, <span id="username">User</span></span>
                 </div>
             </div>
+        </nav>
 
-            <div class="card">
-                <h3>Leave Breakdown</h3>
-                <div class="breakdown-grid">
-                    <div class="breakdown-item">
-                        <label>Carry Forward (2024):</label>
-                        <span id="carryForward" class="value">0</span>
+        <main class="main-content">
+            <header class="page-header">
+                <h1>Dashboard</h1>
+                <p id="currentDateDisplay" class="text-muted">Loading date...</p>
+            </header>
+
+            <!-- Notification area for non-blocking messages -->
+            <div id="notificationArea" class="notification-area"></div>
+
+            <!-- Loading indicator for initial data load -->
+            <div id="loadingIndicator" class="loading-indicator" style="display: none;">
+                <i class="fas fa-spinner fa-spin"></i> Loading dashboard data...
+            </div>
+
+            <section id="dashboardContent" style="display: none;">
+                <div class="dashboard-grid stats-grid">
+                    <div class="card stat-card">
+                        <div class="card-icon"><i class="fas fa-calendar-check"></i></div>
+                        <div class="card-content">
+                            <h4>Leave Balance</h4>
+                            <p id="leaveBalance" class="stat-value">0</p>
+                            <small class="text-muted">Available Days</small>
+                        </div>
                     </div>
-                    <div class="breakdown-item">
-                        <label>Annual Leave (2025):</label>
-                        <span id="annualLeave" class="value">0</span>
+                    <div class="card stat-card">
+                        <div class="card-icon"><i class="fas fa-calendar-times"></i></div>
+                        <div class="card-content">
+                            <h4>Leave Taken</h4>
+                            <p id="leaveTaken" class="stat-value">0</p>
+                            <small class="text-muted">This Year</small>
+                        </div>
                     </div>
-                    <div class="breakdown-item">
-                        <label>Compassionate Leave:</label>
-                        <span id="compassionateLeave" class="value">0</span>
+                    <div class="card stat-card">
+                        <div class="card-icon"><i class="fas fa-briefcase-medical"></i></div>
+                        <div class="card-content">
+                            <h4>MC Balance</h4>
+                            <p id="mcBalance" class="stat-value">0</p>
+                             <small class="text-muted">Available Days</small>
+                        </div>
+                    </div>
+                     <div class="card stat-card">
+                        <div class="card-icon"><i class="fas fa-notes-medical"></i></div>
+                        <div class="card-content">
+                            <h4>MC Taken</h4>
+                            <p id="mcTaken" class="stat-value">0</p>
+                            <small class="text-muted">This Year</small>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </div>
 
-        <!-- Manager Section -->
-        <div class="card" id="managerSection" style="display: none;">
-            <h3>Team Leave Applications (Manager View)</h3>
-            <div class="table-responsive">
-                <table class="monthly-table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Employee</th>
-                            <th>Leave Type</th>
-                            <th>Start Date</th>
-                            <th>End Date</th>
-                            <th>Days</th>
-                            <th>Reason</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="teamApplicationsBody">
-                        <!-- Dynamic content -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
+                <div class="dashboard-grid charts-grid">
+                    <div class="card chart-card">
+                        <h3>Leave Balance Breakdown</h3>
+                        <!-- Placeholder for a more visual breakdown if desired, or keep as is -->
+                        <div class="balance-details">
+                            <div class="detail-item"><span>Total Entitlement:</span> <span id="totalLeave">0</span></div>
+                            <div class="detail-item"><span>Carry Forward (2024):</span> <span id="carryForward">0</span></div>
+                            <div class="detail-item"><span>Annual Leave (2025):</span> <span id="annualLeave">0</span></div>
+                            <div class="detail-item"><span>Compassionate Leave:</span> <span id="compassionateLeave">0</span></div>
+                        </div>
+                        <!-- Canvas for Chart.js for leave balance -->
+                        <canvas id="leaveBalanceChart" width="400" height="200"></canvas>
+                    </div>
 
-        <div class="card">
-            <h3>My Leave Applications</h3>
-            <div class="table-responsive">
-                <table class="monthly-table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Leave Type</th>
-                            <th>Start Date</th>
-                            <th>End Date</th>
-                            <th>Days</th>
-                            <th>Reason</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="leaveApplicationsBody">
-                        <!-- Dynamic content -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
+                    <div class="card chart-card">
+                        <h3>Monthly Leave Trend</h3>
+                        <!-- Canvas for Chart.js for monthly data -->
+                        <canvas id="monthlyLeaveChart" width="400" height="200"></canvas>
+                    </div>
+                </div>
 
-        <div class="card">
-            <h3>Monthly Leave Usage</h3>
-            <div class="table-responsive">
-                <table class="monthly-table">
-                    <thead>
-                        <tr>
-                            <th>Month</th>
-                            <th>Leave Days</th>
-                            <th>MC Days</th>
-                        </tr>
-                    </thead>
-                    <tbody id="monthlyTableBody">
-                        <!-- Dynamic content -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
+                <!-- Manager Section (conditionally displayed by JS) -->
+                <section class="card" id="managerSection" style="display: none;">
+                    <h3>Team Leave Applications</h3>
+                    <div id="managerLoadingIndicator" class="loading-indicator" style="display: none;">
+                        <i class="fas fa-spinner fa-spin"></i> Loading team applications...
+                    </div>
+                    <div class="table-responsive" id="managerTableContainer">
+                        <table class="styled-table"> <!-- Added a class for styling -->
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Employee</th>
+                                    <th>Leave Type</th>
+                                    <th>Dates</th>
+                                    <th>Days</th>
+                                    <th>Reason</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="teamApplicationsBody">
+                                <!-- Rows will be populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <p id="noTeamApplicationsMsg" style="display:none;">No pending team applications.</p>
+                </section>
 
-        <div class="action-buttons">
-            <a href="apply-leave.html" class="btn btn-primary">Apply for Leave</a>
-        </div>
+                <!-- Recent Activity / Upcoming Leaves (Optional Future Enhancement) -->
+                <!--
+                <section class="card">
+                    <h3>Upcoming Approved Leaves</h3>
+                    <ul id="upcomingLeavesList">
+                        <li>Team Member X - Vacation - June 15-20</li>
+                    </ul>
+                </section>
+                -->
+            </section>
+        </main>
+
+        <footer class="app-footer">
+            <p>&copy; <span id="currentYear"></span> Leave Application System. All rights reserved.</p>
+        </footer>
     </div>
 
+    <!-- Include Chart.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="js/dashboard.js"></script>
 </body>
 </html>
