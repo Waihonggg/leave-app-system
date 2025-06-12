@@ -1,210 +1,178 @@
-// Apply leave functionality
-let currentLeaveData = null;
-
+// Apply Leave functionality
 document.addEventListener('DOMContentLoaded', async () => {
-    // Check authentication
-    const username = localStorage.getItem('username');
-    if (!username) {
-        window.location.href = 'login.html';
-        return;
-    }
+    // Set minimum date to today
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('startDate').setAttribute('min', today);
+    document.getElementById('endDate').setAttribute('min', today);
     
-    // Load current leave data
-    await loadCurrentBalances();
+    // Load user data for balance display
+    await loadUserBalance();
     
     // Setup form handlers
     setupFormHandlers();
     
     // Setup logout
     document.getElementById('logoutBtn').addEventListener('click', async () => {
-        await fetch('/api/logout', { method: 'POST' });
-        localStorage.removeItem('username');
-        window.location.href = 'login.html';
+        try {
+            const response = await fetch('/api/logout', { method: 'POST' });
+            const result = await response.json();
+            localStorage.removeItem('username');
+            if (result.success) {
+                window.location.href = 'login.html';
+            }
+        } catch (e) {
+            console.error("Logout error:", e);
+        }
     });
 });
 
-async function loadCurrentBalances() {
+async function loadUserBalance() {
     try {
         const response = await fetch('/api/leave-data');
-        
         if (!response.ok) {
             if (response.status === 401) {
                 window.location.href = 'login.html';
                 return;
             }
-            throw new Error('Failed to load data');
+            throw new Error('Failed to load user data');
         }
         
         const result = await response.json();
-        
-        if (result.success) {
-            currentLeaveData = result.data;
-            document.getElementById('currentBalance').textContent = result.data.leaveBalance;
-            document.getElementById('currentMCBalance').textContent = result.data.mcBalance;
+        if (result.success && result.data) {
+            document.getElementById('currentBalance').textContent = result.data.leaveBalance || 0;
+            document.getElementById('currentMCBalance').textContent = result.data.mcBalance || 0;
         }
     } catch (error) {
-        console.error('Error loading balances:', error);
+        console.error('Error loading user balance:', error);
     }
 }
 
 function setupFormHandlers() {
-    const leaveForm = document.getElementById('leaveForm');
-    const startDateInput = document.getElementById('startDate');
-    const endDateInput = document.getElementById('endDate');
-    const leaveTypeSelect = document.getElementById('leaveType');
+    const form = document.getElementById('leaveForm');
+    const startDate = document.getElementById('startDate');
+    const endDate = document.getElementById('endDate');
     const daysInput = document.getElementById('days');
+    const leaveType = document.getElementById('leaveType');
     
-    // Set minimum date to today
-    const today = new Date().toISOString().split('T')[0];
-    startDateInput.min = today;
-    endDateInput.min = today;
-    
-    // Calculate days and check for weekends
-    function calculateDays() {
-        const startDate = new Date(startDateInput.value);
-        const endDate = new Date(endDateInput.value);
-        
-        if (startDate && endDate && endDate >= startDate) {
-            let totalDays = 0;
-            const currentDate = new Date(startDate);
-            
-            while (currentDate <= endDate) {
-                // Check if it's not a weekend (0 = Sunday, 6 = Saturday)
-                const dayOfWeek = currentDate.getDay();
-                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                    totalDays++;
-                }
-                currentDate.setDate(currentDate.getDate() + 1);
-            }
-            
-            if (totalDays === 0) {
-                showMessage('Selected dates fall entirely on weekends. Please select workdays.', 'error');
-                daysInput.value = '';
-                return;
-            }
-            
-            daysInput.value = totalDays;
-        } else {
-            daysInput.value = '';
-        }
-    }
-    
-    // Validate dates on change
-    function validateDates() {
-        if (startDateInput.value) {
-            const startDate = new Date(startDateInput.value);
-            const startDay = startDate.getDay();
-            
-            if (startDay === 0 || startDay === 6) {
-                showMessage('Start date cannot be on a weekend. Please select a weekday.', 'error');
-                startDateInput.value = '';
-                daysInput.value = '';
-                return false;
-            }
-        }
-        
-        if (endDateInput.value) {
-            const endDate = new Date(endDateInput.value);
-            const endDay = endDate.getDay();
-            
-            if (endDay === 0 || endDay === 6) {
-                showMessage('End date cannot be on a weekend. Please select a weekday.', 'error');
-                endDateInput.value = '';
-                daysInput.value = '';
-                return false;
-            }
-        }
-        
-        return true;
-    }
-    
-    startDateInput.addEventListener('change', () => {
-        if (validateDates()) {
-            endDateInput.min = startDateInput.value;
-            calculateDays();
-        }
-    });
-    
-    endDateInput.addEventListener('change', () => {
-        if (validateDates()) {
-            calculateDays();
-        }
-    });
+    // Calculate days when dates change
+    startDate.addEventListener('change', calculateDays);
+    endDate.addEventListener('change', calculateDays);
     
     // Show/hide MC balance based on leave type
-    leaveTypeSelect.addEventListener('change', () => {
+    leaveType.addEventListener('change', () => {
         const mcBalanceInfo = document.getElementById('mcBalanceInfo');
-        if (leaveTypeSelect.value === 'MC') {
-            mcBalanceInfo.style.display = 'block';
+        if (leaveType.value === 'MC') {
+            mcBalanceInfo.style.display = 'flex';
         } else {
             mcBalanceInfo.style.display = 'none';
         }
     });
     
-    // Handle form submission
-    leaveForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        if (!startDateInput.value || !endDateInput.value) {
-            showMessage('Please select valid dates', 'error');
-            return;
-        }
+    // Form submission
+    form.addEventListener('submit', handleSubmit);
+}
 
-        // Final weekend validation before submission
-        const startDate = new Date(startDateInput.value);
-        const endDate = new Date(endDateInput.value);
+function calculateDays() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    const daysInput = document.getElementById('days');
+    
+    if (startDate && endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
         
-        if (startDate.getDay() === 0 || startDate.getDay() === 6) {
-            showMessage('Cannot apply leave starting on a weekend. Please select a weekday.', 'error');
+        if (end < start) {
+            showMessage('End date must be after start date', 'error');
+            daysInput.value = '';
             return;
         }
         
-        if (endDate.getDay() === 0 || endDate.getDay() === 6) {
-            showMessage('Cannot apply leave ending on a weekend. Please select a weekday.', 'error');
-            return;
-        }
+        // Calculate business days (excluding weekends)
+        let days = 0;
+        const current = new Date(start);
         
-        const formData = {
-            leaveType: leaveTypeSelect.value,
-            startDate: startDateInput.value,
-            endDate: endDateInput.value,
-            reason: document.getElementById('reason').value,
-            days: parseFloat(daysInput.value)
-        };
-        
-        // Disable submit button to prevent double submission
-        const submitButton = leaveForm.querySelector('button[type="submit"]');
-        submitButton.disabled = true;
-        submitButton.textContent = 'Submitting...';
-        
-        try {
-            const response = await fetch('/api/apply-leave', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(formData)
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-                showMessage('Leave application submitted successfully! Status: Pending approval. An email has been sent to your manager.', 'success');
-                setTimeout(() => {
-                    window.location.href = 'dashboard.html';
-                }, 2000);
-            } else {
-                showMessage(result.message || 'Failed to submit leave application', 'error');
-                submitButton.disabled = false;
-                submitButton.textContent = 'Submit Application';
+        while (current <= end) {
+            const dayOfWeek = current.getDay();
+            if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Not Sunday or Saturday
+                days++;
             }
-        } catch (error) {
-            showMessage('An error occurred. Please try again.', 'error');
-            console.error('Submit error:', error);
-            submitButton.disabled = false;
-            submitButton.textContent = 'Submit Application';
+            current.setDate(current.getDate() + 1);
         }
-    });
+        
+        daysInput.value = days;
+    }
+}
+
+async function handleSubmit(e) {
+    e.preventDefault();
+    
+    const formData = {
+        leaveType: document.getElementById('leaveType').value,
+        startDate: document.getElementById('startDate').value,
+        endDate: document.getElementById('endDate').value,
+        reason: document.getElementById('reason').value,
+        days: document.getElementById('days').value
+    };
+    
+    // Validate weekend selection
+    const start = new Date(formData.startDate);
+    const end = new Date(formData.endDate);
+    
+    // Check if start or end date is weekend (for non-WFH leave)
+    if (formData.leaveType !== 'WFH') {
+        if (start.getDay() === 0 || start.getDay() === 6) {
+            showMessage('Start date cannot be on a weekend', 'error');
+            return;
+        }
+        if (end.getDay() === 0 || end.getDay() === 6) {
+            showMessage('End date cannot be on a weekend', 'error');
+            return;
+        }
+    }
+    
+    // Validate days
+    if (!formData.days || formData.days <= 0) {
+        showMessage('Please select valid dates', 'error');
+        return;
+    }
+    
+    // Show loading state
+    const submitButton = e.target.querySelector('button[type="submit"]');
+    const originalText = submitButton.innerHTML;
+    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+    submitButton.disabled = true;
+    
+    try {
+        const response = await fetch('/api/apply-leave', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(formData)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showMessage('Leave application submitted successfully!', 'success');
+            // Reset form
+            e.target.reset();
+            document.getElementById('days').value = '';
+            
+            // Redirect after 2 seconds
+            setTimeout(() => {
+                window.location.href = 'dashboard.html';
+            }, 2000);
+        } else {
+            showMessage(result.message || 'Failed to submit leave application', 'error');
+        }
+    } catch (error) {
+        console.error('Error submitting leave:', error);
+        showMessage('An error occurred. Please try again.', 'error');
+    } finally {
+        submitButton.innerHTML = originalText;
+        submitButton.disabled = false;
+    }
 }
 
 function showMessage(text, type) {
@@ -213,7 +181,7 @@ function showMessage(text, type) {
     messageDiv.className = `message ${type}`;
     messageDiv.style.display = 'block';
     
-    // Auto-hide after 5 seconds
+    // Hide after 5 seconds
     setTimeout(() => {
         messageDiv.style.display = 'none';
     }, 5000);
