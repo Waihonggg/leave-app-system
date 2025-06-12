@@ -325,7 +325,7 @@ app.get('/api/leave-data', requireLogin, async (req, res) => {
     }
 });
 
-// Apply leave endpoint - FIXED VERSION
+// Apply leave endpoint
 app.post('/api/apply-leave', requireLogin, async (req, res) => {
     console.log('--- /api/apply-leave endpoint CALLED ---');
     console.log('Session user:', JSON.stringify(req.session.user));
@@ -526,7 +526,6 @@ app.get('/api/:action(approve|reject)-leave', requireLogin, async (req, res) => 
                 </html>
             `);
         }
-        }
 
         // Update application status
         await sheets.spreadsheets.values.update({
@@ -662,7 +661,7 @@ app.post('/api/logout', (req, res) => {
             return res.status(500).json({ success: false, message: 'Logout error' });
         }
         res.clearCookie('connect.sid');
-        console.log(`Session ${req.sessionID} destroyed. Logout successful.`);
+        console.log(`Session destroyed. Logout successful.`);
         res.json({ success: true, message: "Logout successful" });
     });
 });
