@@ -119,7 +119,35 @@ function displayLeaveData(data) {
         updateLeaveApplicationsTable(data.applications);
     }
 }
+// Add this function to your existing dashboard.js to handle MC Taken
+function displayLeaveData(data) {
+    if (!data) {
+        console.error("displayLeaveData called with undefined or null data.");
+        return;
+    }
 
+    // Update quick stats
+    document.getElementById('leaveBalance').textContent = data.leaveBalance !== undefined ? data.leaveBalance : '0';
+    document.getElementById('leaveTaken').textContent = data.leaveTaken !== undefined ? data.leaveTaken : '0';
+    document.getElementById('mcBalance').textContent = data.mcBalance !== undefined ? data.mcBalance : '0';
+    document.getElementById('mcTaken').textContent = data.mcTaken !== undefined ? data.mcTaken : '0'; // Add this line
+
+    // Update balance overview
+    document.getElementById('totalLeave').textContent = data.totalLeave !== undefined ? data.totalLeave : 'N/A';
+    document.getElementById('leaveTakenDetail').textContent = data.leaveTaken !== undefined ? data.leaveTaken : 'N/A';
+    document.getElementById('leaveBalanceDetail').textContent = data.leaveBalance !== undefined ? data.leaveBalance : 'N/A';
+    
+    // Update leave breakdown
+    document.getElementById('carryForward').textContent = data.carryForward !== undefined ? data.carryForward : 'N/A';
+    document.getElementById('annualLeave').textContent = data.annualLeave !== undefined ? data.annualLeave : 'N/A';
+    document.getElementById('compassionateLeave').textContent = data.compassionateLeave !== undefined ? data.compassionateLeave : 'N/A';
+    document.getElementById('wfhCount').textContent = data.wfhCount !== undefined ? data.wfhCount : 'N/A';
+    
+    // Update leave applications table
+    if (data.applications && Array.isArray(data.applications)) {
+        updateLeaveApplicationsTable(data.applications);
+    }
+}
 function createBalanceChart(data) {
     const ctx = document.getElementById('balanceChart');
     if (!ctx) return;
