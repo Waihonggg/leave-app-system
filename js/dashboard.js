@@ -66,6 +66,11 @@ async function loadLeaveData() {
                  usernameDisplay.textContent = result.data.username;
             }
             displayLeaveData(result.data);
+            
+            // If user is a manager, load team applications
+            if (result.data.isManager && result.data.teamApplications) {
+                displayManagerSection(result.data.teamApplications);
+            }
         } else {
             console.error('API call to /api/leave-data was not successful or data is missing:', result.message);
             alert('Could not load your leave data: ' + (result.message || 'Unknown error from server.'));
@@ -100,6 +105,10 @@ function displayLeaveData(data) {
     }
     
     // Update monthly table
+    updateMonthlyTable(data.monthlyData);
+}
+
+function updateMonthlyTable(monthlyData) {
     const monthlyTableBody = document.getElementById('monthlyTableBody');
     if (!monthlyTableBody) {
         console.error("Element with ID 'monthlyTableBody' not found.");
@@ -110,8 +119,8 @@ function displayLeaveData(data) {
     const months = ['Jan', 'Feb', 'March', 'Apr', 'May', 'June', 'July', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'];
     const currentMonthShort = new Date().toLocaleString('en-US', { month: 'short' });
 
-    if (!data.monthlyData || typeof data.monthlyData !== 'object') {
-        console.warn('data.monthlyData is missing or not an object:', data.monthlyData);
+    if (!monthlyData || typeof monthlyData !== 'object') {
+        console.warn('monthlyData is missing or not an object:', monthlyData);
         const row = monthlyTableBody.insertRow();
         const cell = row.insertCell();
         cell.colSpan = 3;
@@ -122,7 +131,7 @@ function displayLeaveData(data) {
     months.forEach(monthFullName => {
         const row = document.createElement('tr');
         
-        const monthStats = data.monthlyData[monthFullName]; 
+        const monthStats = monthlyData[monthFullName]; 
         
         let isCurrentMonth = false;
         if (monthFullName.startsWith(currentMonthShort) || (monthFullName === "Sept" && currentMonthShort === "Sep")) {
@@ -140,7 +149,7 @@ function displayLeaveData(data) {
             leaveDays = monthStats.leave !== undefined ? monthStats.leave.toString() : '0';
             mcDays = monthStats.mc !== undefined ? monthStats.mc.toString() : '0';
         } else {
-            console.warn(`Data for month ${monthFullName} is missing or not an object in data.monthlyData.`);
+            console.warn(`Data for month ${monthFullName} is missing or not an object in monthlyData.`);
         }
         
         row.innerHTML = `
@@ -164,7 +173,7 @@ function updateLeaveApplicationsTable(applications) {
 
     if (applications.length === 0) {
         const row = document.createElement('tr');
-        row.innerHTML = '<td colspan="7" style="text-align: center;">No leave applications found</td>';
+        row.innerHTML = '<td colspan="8" style="text-align: center;">No leave applications found</td>';
         tableBody.appendChild(row);
         return;
     }
@@ -174,6 +183,13 @@ function updateLeaveApplicationsTable(applications) {
         
         // Add status-based styling
         row.classList.add(`status-${app.status.toLowerCase()}`);
+        
+        let actionsHtml = '';
+        if (app.status === 'Pending') {
+            actionsHtml = `
+                <button class="btn btn-sm btn-secondary" onclick="cancelApplication('${app.id}', ${app.rowNumber})">Cancel</button>
+            `;
+        }
         
         row.innerHTML = `
             <td>${app.id}</td>
@@ -187,10 +203,128 @@ function updateLeaveApplicationsTable(applications) {
                     ${app.status}
                 </span>
             </td>
+            <td>${actionsHtml}</td>
         `;
         
         tableBody.appendChild(row);
     });
+}
+
+function displayManagerSection(teamApplications) {
+    const managerSection = document.getElementById('managerSection');
+    const teamApplicationsBody = document.getElementById('teamApplicationsBody');
+    
+    if (!managerSection || !teamApplicationsBody) return;
+    
+    // Show manager section
+    managerSection.style.display = 'block';
+    
+    teamApplicationsBody.innerHTML = '';
+    
+    if (teamApplications.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = '<td colspan="9" style="text-align: center;">No pending team applications</td>';
+        teamApplicationsBody.appendChild(row);
+        return;
+    }
+    
+    teamApplications.forEach(app => {
+        const row = document.createElement('tr');
+        row.classList.add(`status-${app.status.toLowerCase()}`);
+        
+        let actionsHtml = '';
+        if (app.status === 'Pending') {
+            actionsHtml = `
+                <button class="btn btn-sm btn-primary" onclick="approveLeave('${app.id}', ${app.rowNumber})">Approve</button>
+                <button class="btn btn-sm btn-danger" onclick="rejectLeave('${app.id}', ${app.rowNumber})">Reject</button>
+            `;
+        }
+        
+        row.innerHTML = `
+            <td>${app.id}</td>
+            <td>${app.username}</td>
+            <td>${app.leaveType}</td>
+            <td>${formatDate(app.startDate)}</td>
+            <td>${formatDate(app.endDate)}</td>
+            <td>${app.days}</td>
+            <td>${app.reason || 'N/A'}</td>
+            <td>
+                <span class="status-badge ${app.status.toLowerCase()}">
+                    ${app.status}
+                </span>
+            </td>
+            <td>${actionsHtml}</td>
+        `;
+        
+        teamApplicationsBody.appendChild(row);
+    });
+}
+
+// Action functions
+async function approveLeave(applicationId, rowNumber) {
+    if (confirm('Are you sure you want to approve this leave application?')) {
+        try {
+            const response = await fetch(`/api/approve-leave?row=${rowNumber}&id=${applicationId}`, {
+                method: 'GET'
+            });
+            
+            if (response.ok) {
+                alert('Leave application approved successfully');
+                window.location.reload();
+            } else {
+                alert('Failed to approve leave application');
+            }
+        } catch (error) {
+            console.error('Error approving leave:', error);
+            alert('An error occurred while approving the leave');
+        }
+    }
+}
+
+async function rejectLeave(applicationId, rowNumber) {
+    if (confirm('Are you sure you want to reject this leave application?')) {
+        try {
+            const response = await fetch(`/api/reject-leave?row=${rowNumber}&id=${applicationId}`, {
+                method: 'GET'
+            });
+            
+            if (response.ok) {
+                alert('Leave application rejected successfully');
+                window.location.reload();
+            } else {
+                alert('Failed to reject leave application');
+            }
+        } catch (error) {
+            console.error('Error rejecting leave:', error);
+            alert('An error occurred while rejecting the leave');
+        }
+    }
+}
+
+async function cancelApplication(applicationId, rowNumber) {
+    if (confirm('Are you sure you want to cancel this leave application?')) {
+        try {
+            const response = await fetch(`/api/cancel-leave`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ applicationId, rowNumber })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                alert('Leave application cancelled successfully');
+                window.location.reload();
+            } else {
+                alert(result.message || 'Failed to cancel leave application');
+            }
+        } catch (error) {
+            console.error('Error cancelling leave:', error);
+            alert('An error occurred while cancelling the leave');
+        }
+    }
 }
 
 function formatDate(dateString) {
