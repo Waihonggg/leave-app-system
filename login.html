@@ -3,16 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Leave Management System</title>
-    <link rel="stylesheet" href="css/styles.css">
+    <title>Leave Management Login</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
         body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 20px;
         }
         
         .login-container {
@@ -20,19 +27,31 @@
             border-radius: 20px;
             box-shadow: 0 20px 40px rgba(0,0,0,0.1);
             overflow: hidden;
-            width: 400px;
-            max-width: 90%;
+            width: 100%;
+            max-width: 450px;
+            animation: slideUp 0.6s ease-out;
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         
         .login-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
             padding: 2rem;
             text-align: center;
-            color: white;
         }
         
         .login-header h1 {
-            font-size: 1.75rem;
+            font-size: 1.8rem;
             margin-bottom: 0.5rem;
             display: flex;
             align-items: center;
@@ -54,16 +73,13 @@
         }
         
         .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #374151;
+            font-weight: 600;
             display: flex;
             align-items: center;
             gap: 8px;
-            color: #4a5568;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-        }
-        
-        .form-group label i {
-            color: #667eea;
         }
         
         .form-group input {
@@ -108,16 +124,13 @@
             cursor: not-allowed;
         }
         
-        #loginMessage {
+        #error-message {
             margin-top: 1rem;
             padding: 1rem;
             border-radius: 8px;
             text-align: center;
             font-weight: 500;
             display: none;
-        }
-        
-        #loginMessage.error {
             background: #fee2e2;
             color: #991b1b;
             border: 1px solid #fecaca;
@@ -176,9 +189,12 @@
                 Sign In
             </button>
             
-            <div id="loginMessage"></div>
+            <div id="error-message"></div>
         </form>
         
+        <div class="login-footer">
+            <p>&copy; 2025 Leave Management System</p>
+        </div>
     </div>
     
     <script src="js/auth.js"></script>
